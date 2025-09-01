@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HealthPlus Pharmacy</title>
+    <meta name="description" content="Your trusted neighborhood pharmacy for prescriptions, wellness, and delivery." />
+    <style>
+      :root {
+        --brand:#1e90ff;
+        --brand-dark:#166ac4;
+        --ink:#0f172a;
+        --muted:#64748b;
+        --bg:#f8fafc;
+        --card:#ffffff;
+        --line:#e2e8f0;
+      }
+      * { box-sizing: border-box; }
+      body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color:var(--ink); background:var(--bg); }
+      a { color: var(--brand); text-decoration: none; }
+      header { position:sticky; top:0; z-index:10; background:#fff; border-bottom:1px solid var(--line); }
+      .container { max-width:1100px; margin:0 auto; padding:0 16px; }
+      .nav { display:flex; align-items:center; justify-content:space-between; padding:14px 0; }
+      .logo { display:flex; align-items:center; gap:10px; font-weight:800; font-size:20px; }
+      .logo .pill { width:28px; height:28px; border-radius:8px; background:linear-gradient(135deg, var(--brand), #7c3aed); display:inline-flex; align-items:center; justify-content:center; color:#fff; }
+      .nav a { margin-left:14px; color:var(--muted); font-weight:600; }
+      .nav a:hover { color:var(--ink); }
+
+      .hero { background:linear-gradient(135deg, #e0f2fe, #eef2ff); border-bottom:1px solid var(--line); }
+      .hero-wrap { display:grid; grid-template-columns: 1.2fr 1fr; gap:24px; align-items:center; padding:48px 0; }
+      .hero h1 { font-size:42px; line-height:1.1; margin:0 0 12px; }
+      .hero p { color:var(--muted); font-size:18px; margin:0 0 18px; }
+      .cta { display:inline-block; background:var(--brand); color:#fff; padding:12px 18px; border-radius:10px; font-weight:700; }
+      .cta:hover { background:var(--brand-dark); }
+      .hero-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow: 0 10px 30px rgba(2,6,23,.08); }
+      .hero-card ul { margin:0; padding-left:18px; color:var(--muted); }
+
+      .section { padding:40px 0; }
+      .section h2 { margin:0 0 16px; font-size:28px; }
+      .grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; }
+      .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
+      .card h3 { margin:0 0 8px; font-size:18px; }
+      .price { font-weight:800; }
+      .muted { color:var(--muted); }
+
+      .services { display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; }
+      .service { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+
+      .contact { display:grid; grid-template-columns: 1.2fr 1fr; gap:18px; }
+      .contact .card { height:100%; }
+      .list { margin:0; padding-left:18px; }
+
+      footer { border-top:1px solid var(--line); background:#fff; }
+      .foot { padding:18px 0; font-size:14px; color:var(--muted); display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+
+      @media (max-width: 900px) {
+        .hero-wrap, .contact { grid-template-columns: 1fr; }
+        .grid, .services { grid-template-columns: 1fr 1fr; }
+      }
+      @media (max-width: 560px) {
+        .grid, .services { grid-template-columns: 1fr; }
+        .hero h1 { font-size:32px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="container nav">
+        <div class="logo"><span class="pill">💊</span> HealthPlus Pharmacy</div>
+        <nav>
+          <a href="#products">Products</a>
+          <a href="#services">Services</a>
+          <a href="#contact">Contact</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-wrap">
+          <div>
+            <h1>Your neighborhood pharmacy for better health</h1>
+            <p>Fast prescription refills, trusted pharmacists, and everyday wellness essentials. In-store and delivery.</p>
+            <a class="cta" href="#products">Shop popular items</a>
+          </div>
+          <div class="hero-card">
+            <h3>Need help right now?</h3>
+            <p class="muted">Ask our assistant anything about medications, side effects, or general wellness.</p>
+            <ul>
+              <li>Refill reminders</li>
+              <li>Find over-the-counter options</li>
+              <li>Talk to a pharmacist</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="products" class="section">
+        <div class="container">
+          <h2>Popular products</h2>
+          <div class="grid">
+            <div class="card">
+              <h3>Acetaminophen 500mg</h3>
+              <p class="muted">Pain reliever / fever reducer (24 caplets)</p>
+              <div class="price">$6.99</div>
+            </div>
+            <div class="card">
+              <h3>Vitamin C 1000mg</h3>
+              <p class="muted">Immune support (60 tablets)</p>
+              <div class="price">$9.49</div>
+            </div>
+            <div class="card">
+              <h3>Cough Syrup (Dextromethorphan)</h3>
+              <p class="muted">Cough suppressant (8 fl oz)</p>
+              <div class="price">$8.29</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="services" class="section">
+        <div class="container">
+          <h2>Services</h2>
+          <div class="services">
+            <div class="service">
+              <h3>Prescription Refills</h3>
+              <p class="muted">Refill online and pick up in-store or get home delivery.</p>
+            </div>
+            <div class="service">
+              <h3>Vaccinations</h3>
+              <p class="muted">Flu, COVID-19, shingles, and more. Walk-ins welcome.</p>
+            </div>
+            <div class="service">
+              <h3>Medication Counseling</h3>
+              <p class="muted">Speak with a licensed pharmacist about your medications.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="contact" class="section">
+        <div class="container contact">
+          <div class="card">
+            <h2>Contact us</h2>
+            <p class="muted">123 Main Street, Suite 100, Your City</p>
+            <p>
+              Phone: <a href="tel:+1234567890">(123) 456-7890</a><br />
+              Email: <a href="mailto:hello@healthplus.example">hello@healthplus.example</a>
+            </p>
+            <p class="muted">Hours: Mon–Fri 9am–7pm, Sat 10am–5pm, Sun closed</p>
+          </div>
+          <div class="card">
+            <h3>Refill your prescription</h3>
+            <p class="muted">Send your refill request and we’ll notify you when it’s ready.</p>
+            <form onsubmit="event.preventDefault(); alert('Thanks! We\'ll be in touch shortly.');">
+              <div style="display:grid; gap:10px; grid-template-columns: 1fr 1fr;">
+                <input required placeholder="First name" style="padding:10px; border:1px solid var(--line); border-radius:8px;" />
+                <input required placeholder="Last name" style="padding:10px; border:1px solid var(--line); border-radius:8px;" />
+                <input required type="tel" placeholder="Phone" style="padding:10px; border:1px solid var(--line); border-radius:8px; grid-column: span 2;" />
+                <input required placeholder="Rx number" style="padding:10px; border:1px solid var(--line); border-radius:8px; grid-column: span 2;" />
+                <button class="cta" type="submit" style="border:none; grid-column: span 2;">Submit request</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="container foot">
+        <div>© <span id="year"></span> HealthPlus Pharmacy</div>
+        <div>For emergencies call 911. This site does not provide medical advice.</div>
+      </div>
+    </footer>
+
+    <script>
+      document.getElementById('year').textContent = new Date().getFullYear();
+    </script>
+    <script src="scripts/script.js?v=1.2.1" data-auto-init="1"></script>
+    <!-- <script src="scripts/prosper_pharmacy.js" data-auto-init="1"></script> -->
+  </body>
+  </html>
