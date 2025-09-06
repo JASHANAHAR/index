@@ -20,7 +20,13 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
     labels: DEFAULT_LABELS,
     timeout: 60000,
     mock: false,
-    verbose: false
+    verbose: false,
+
+      headerGradient: 'linear-gradient(86deg, rgb(0 103 167), rgba(244,127,32,1))',
+  userMessageColor: 'rgba(0,94,153,.85)',
+  sendButtonColor: 'rgb(0 103 167)',
+  clinicNameColor: '#0067a7',
+  logoUrl: ASSETS + 'images/logo2.png',
   };
     const STORAGE_KEYS = { collapsed: 'medical_bot_collapsed' };
 
@@ -67,22 +73,29 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
     function ensureViewportMeta() {
       try {
         const head = document.head || document.getElementsByTagName('head')[0];
-        let meta = document.querySelector('meta[name="viewport"]');
-        const wanted = 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content';
-        if (!meta) {
-          meta = document.createElement('meta');
-          meta.setAttribute('name', 'viewport');
-          meta.setAttribute('content', wanted);
-          head.appendChild(meta);
-          return;
+
+        // 1) Viewport: keep it simple for Safari
+        const wanted = 'width=device-width, initial-scale=1, viewport-fit=cover';
+        let vp = document.querySelector('meta[name="viewport"]');
+        if (!vp) {
+          vp = document.createElement('meta');
+          vp.setAttribute('name', 'viewport');
+          head.appendChild(vp);
         }
-        const content = meta.getAttribute('content') || '';
-        const tokens = new Set(content.split(',').map(s => s.trim()).filter(Boolean));
-        tokens.add('viewport-fit=cover');
-        tokens.add('interactive-widget=resizes-content');
-        meta.setAttribute('content', Array.from(tokens).join(', '));
-      } catch { /* no-op */ }
+        vp.setAttribute('content', wanted);
+
+        // 2) Chrome/Android: separate meta for interactive-widget
+        let iw = document.querySelector('meta[name="interactive-widget"]');
+        if (!iw) {
+          iw = document.createElement('meta');
+          iw.setAttribute('name', 'interactive-widget');
+          head.appendChild(iw);
+        }
+        iw.setAttribute('content', 'resizes-content');
+      } catch {}
     }
+
+
   
     function normalize(data) {
       if (Array.isArray(data)) data = data[0] || {};
@@ -192,6 +205,7 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
             height: auto !important;padding-top: env(safe-area-inset-top);
           border-radius:0 !important; border:none !important; background:#f7f8fb;
           overflow:hidden !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important;
+          padding-bottom: max(var(--kb, 0px), env(safe-area-inset-bottom));
         }
         
         .head{
@@ -219,7 +233,7 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
         .dots{ display:flex; gap:6px } .dot{ width:8px; height:8px; background:#d1d5db; border-radius:50%; animation: blink 1.2s infinite ease-in-out }
         .dot:nth-child(2){ animation-delay:.15s } .dot:nth-child(3){ animation-delay:.3s }
         .composer{ position:relative; background:#f7f8fb; border-top: 1px solid #e5e7eb; }
-        .panel.fullscreen .composer{ padding-bottom: max(var(--kb, 0px), env(safe-area-inset-bottom)); }
+        .panel.fullscreen .composer{ padding-bottom: 0; }
         .form{
           display:flex;
           align-items:center;
@@ -253,6 +267,9 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
         -webkit-overflow-scrolling: touch;
         /* remove this if you had it */
         /* overflow-anchor: none;  */
+        border: 1px solid #d1cdc4;
+        border-bottom: none;
+        border-top: none;
       }
         
         .typing{
@@ -345,9 +362,11 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
       const BOTTOM_EPS = 32;
       let readingHistory = false;
       
-      function nearBottom(el) {
-        return (el.scrollHeight - el.clientHeight - el.scrollTop) <= BOTTOM_EPS;
-      }
+      function isAtBottom(el) {
+      const BOTTOM_EPS = 32;
+      return (el.scrollHeight - el.clientHeight - el.scrollTop) <= BOTTOM_EPS;
+    }
+
       
       function smartScrollToBottom(force = false) {
         if (!force && (readingHistory || !state.stickToBottom)) return;
@@ -376,7 +395,132 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
       //   ensureJumpButton();
       //   jumpBtn.style.display = show ? 'block' : 'none';
       // }
-  
+      // --- Keyboard / viewport management (unified) ---
+      const UA = navigator.userAgent || '';
+      const IS_IOS = /iP(hone|ad|od)/.test(UA);
+      const IS_ANDROID = /Android/i.test(UA);
+      const VV = window.visualViewport || null;
+
+      // ONE writer of --kb everywhere
+      function writeKb(px) {
+        document.documentElement.style.setProperty('--kb', `${Math.max(0, Math.round(px || 0))}px`);
+      }
+
+      // Common occlusion calc using VisualViewport
+      function occludedPx() {
+        if (!VV) return 0;
+        return Math.max(0, window.innerHeight - VV.height - (VV.offsetTop || 0));
+      }
+
+      // Small debounce helper
+      function debounce(fn, ms = 80) {
+        let t;
+        return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+      }
+
+      /* -------------------- iOS: latched logic -------------------- */
+      if (IS_IOS) {
+        const OPEN_THRESH = 60;     // occlusion >= 60px → definitely open
+        const CLOSE_THRESH = 30;    // below this we might be closing
+        const CLOSE_GRACE_MS = 350; // hold the last value briefly to ride Safari jitter
+
+        let latched = false;
+        let lastPx = 0;
+        let zeroTimer = null;
+
+        function kbLatchUpdate(_from) {
+          const occ = occludedPx();
+
+          if (occ >= OPEN_THRESH) {
+            latched = true;
+            lastPx = occ;
+            if (zeroTimer) { clearTimeout(zeroTimer); zeroTimer = null; }
+            writeKb(lastPx);
+            return;
+          }
+
+          if (latched && occ >= CLOSE_THRESH) {
+            if (occ > 0) lastPx = Math.max(lastPx, occ);
+            writeKb(lastPx);
+            return;
+          }
+
+          if (latched && occ < CLOSE_THRESH) {
+            if (!zeroTimer) {
+              zeroTimer = setTimeout(() => {
+                latched = false;
+                lastPx = 0;
+                writeKb(0);
+                zeroTimer = null;
+              }, CLOSE_GRACE_MS);
+            }
+            writeKb(lastPx || 0);
+            return;
+          }
+
+          // Not latched and small occlusion → 0
+          writeKb(0);
+        }
+
+        function kbOnFocus() {
+          kbLatchUpdate('focus');
+          let ticks = 8;
+          const id = setInterval(() => {
+            kbLatchUpdate('focus-interval');
+            if (--ticks <= 0) clearInterval(id);
+          }, 50);
+        }
+
+        function kbOnBlur() {
+          if (zeroTimer) { clearTimeout(zeroTimer); zeroTimer = null; }
+          latched = false;
+          lastPx = 0;
+          writeKb(0);
+        }
+
+        if (VV) {
+          const pump = debounce(() => kbLatchUpdate('vv'), 80);
+          VV.addEventListener('resize', pump, { passive: true });
+          VV.addEventListener('scroll',  pump, { passive: true });
+          kbLatchUpdate('vv-init');
+        }
+
+        msgEl.addEventListener('focus', kbOnFocus, { passive: true });
+        msgEl.addEventListener('blur',  kbOnBlur,  { passive: true });
+        msgEl.addEventListener('input', () => kbLatchUpdate('input'), { passive: true });
+        msgEl.addEventListener('touchmove', () => kbLatchUpdate('touchmove'), { passive: true });
+        panel.addEventListener('transitionend', () => kbLatchUpdate('panel-transition'), { passive: true });
+
+        window.addEventListener('orientationchange', () => {
+          setTimeout(() => kbLatchUpdate('orientation'), 250);
+        }, { passive: true });
+      }
+
+      /* -------------------- Android: simple updater -------------------- */
+      if (IS_ANDROID) {
+        if (VV) {
+          const upd = debounce(() => writeKb(occludedPx()), 50);
+          VV.addEventListener('resize', upd, { passive: true });
+          VV.addEventListener('scroll',  upd, { passive: true });
+          // initialize
+          writeKb(occludedPx());
+        } else {
+          // Fallback if VV is missing
+          let baseline = window.innerHeight;
+          msgEl.addEventListener('focus', () => { baseline = window.innerHeight; }, { passive: true });
+          window.addEventListener('resize', () => {
+            if (document.activeElement === msgEl) {
+              writeKb(Math.max(0, baseline - window.innerHeight));
+            }
+          }, { passive: true });
+        }
+
+        // Reset on blur
+        msgEl.addEventListener('blur', () => writeKb(0), { passive: true });
+      }
+
+
+
       let _scrollQueued = false;
       function scheduleScrollToBottom({ force = false } = {}) {
         // Never fight the user unless explicitly forced (e.g., panel just opened)
@@ -387,12 +531,12 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
         requestAnimationFrame(() => {
           _scrollQueued = false;
           // Re-check right before moving
-          if (!force && (userScrolling || !nearBottom(stream))) return;
+          if (!force && (userScrolling || !isAtBottom(stream))) return;
           stream.scrollTop = stream.scrollHeight;
         });
       }
     
-      stream.addEventListener('scroll', () => { state.stickToBottom = nearBottom(stream); }, { passive: true });
+      stream.addEventListener('scroll', () => { state.stickToBottom = isAtBottom(stream); }, { passive: true });
       // Only watch for added/removed message rows; ignore characterData + subtree noise
       new MutationObserver(() => scheduleScrollToBottom())
       .observe(stream, { childList: true }); // no subtree, no characterData
@@ -431,15 +575,23 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
         if (open === undefined) open = !panel.classList.contains('open');
         panel.classList.toggle('open', open);
         badge.style.display = 'none';
-      
-        if (open) {
-          if (isMobile()) panel.classList.add('fullscreen');
-          layoutStreamHeight();                 // <-- ADD
-          smartScrollToBottom(true); 
-        } else {
-          panel.classList.remove('fullscreen');
+
+      if (open) {
+        if (isMobile()) panel.classList.add('fullscreen');
+        if (IS_IOS) lockPageScroll();
+        layoutStreamHeight();
+        if (IS_IOS && document.activeElement === msgEl) {
+          msgEl.dispatchEvent(new Event('focus'));
         }
-      
+        smartScrollToBottom(true);
+      } else {
+        panel.classList.remove('fullscreen');
+        if (IS_IOS) unlockPageScroll();
+        if (IS_ANDROID) writeKb(0);
+      }
+
+
+
         launcherIcon.innerHTML = '';
         if (open) {
           launcherIcon.appendChild(h('img', { src: (ASSETS + 'images/close.svg'), alt: 'Close', style:'width:15px;height:15px;filter:brightness(0) saturate(100%) invert(17%) sepia(100%) saturate(4543%) hue-rotate(92deg) brightness(107%) contrast(97%);'}));
@@ -447,6 +599,7 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
           launcherIcon.appendChild(h('img', { src: (ASSETS + 'images/up-arrow1.svg'), alt: 'Chat', style: 'width:20px;height:20px;' }));
         }
       }
+
   
       window.addEventListener('resize', () => {
         if (panel.classList.contains('open')) {
@@ -460,16 +613,19 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
       let _userScrollCooloff = null;
       
       stream.addEventListener('scroll', () => {
-        const nearBottom = isNearBottom(stream);
-        state.stickToBottom = nearBottom;
-      
-        // If not near bottom, treat as user-driven scroll and start cooloff
-        if (!nearBottom) {
-          userScrolling = true;
-          clearTimeout(_userScrollCooloff);
-          _userScrollCooloff = setTimeout(() => { userScrolling = false; }, 200);
-        }
+          const nearBottom = isAtBottom(stream);
+          state.stickToBottom = nearBottom;
+          if (!nearBottom) {
+            userScrolling = true;
+            clearTimeout(_userScrollCooloff);
+            _userScrollCooloff = setTimeout(() => { userScrolling = false; }, 200);
+          }
+        }, { passive: true });
+
+      window.addEventListener('orientationchange', () => {
+        setTimeout(() => kbLatchUpdate('orientation'), 250);
       }, { passive: true });
+
       
       // Also mark during touch gestures (helps iOS momentum)
       stream.addEventListener('touchstart', () => { userScrolling = true; }, { passive: true });
@@ -478,36 +634,71 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
         _userScrollCooloff = setTimeout(() => { userScrolling = false; }, 200);
       }, { passive: true });
       
-  
-      if (window.visualViewport) {
-        const vv = window.visualViewport;
-        let vvTimer;
-        const onViewportChange = () => {
-          clearTimeout(vvTimer);
-          vvTimer = setTimeout(() => {
-            layoutStreamHeight();                 // <-- ADD
-            const occluded = Math.max(0, window.innerHeight - vv.height - (vv.offsetTop || 0));
-            document.documentElement.style.setProperty('--kb', occluded + 'px');
-            updateComposerHeightVar();
-      
-            if (panel.classList.contains('open') && state.stickToBottom && !userScrolling) {            // <-- ADD
-              smartScrollToBottom(true); 
-            }
-          }, 120);
-        };
-        vv.addEventListener('resize', onViewportChange, { passive: true });
-        vv.addEventListener('scroll',  onViewportChange, { passive: true });
+    if (window.visualViewport) {
+      const vv = window.visualViewport;
+      // Platform flags
+      const UA = navigator.userAgent || '';
+      const IS_IOS = /iP(hone|ad|od)/.test(UA);
+      const IS_ANDROID = /Android/i.test(UA);
+      const VV = window.visualViewport || null;
+
+      // Single writer of --kb
+      function writeKb(px) {
+        document.documentElement.style.setProperty('--kb', `${Math.max(0, Math.round(px || 0))}px`);
       }
+
+      // Common occlusion calc
+      function occludedPx() {
+        if (!VV) return 0;
+        return Math.max(0, window.innerHeight - VV.height - (VV.offsetTop || 0));
+      }
+
+      // Tiny debounce
+      function debounce(fn, ms=80){
+        let t; 
+        return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); };
+      }
+
+    if (VV) {
+      const onViewportChange = debounce(() => {
+        layoutStreamHeight();
+        updateComposerHeightVar();
+
+        if (IS_IOS && typeof kbLatchUpdate === 'function') {
+          // iOS: keep the latched keyboard value stable
+          kbLatchUpdate('vv');
+        } else if (IS_ANDROID) {
+          // Android: just mirror the occlusion directly
+          writeKb(occludedPx());
+        }
+
+        if (panel.classList.contains('open') && state.stickToBottom && !userScrolling) {
+          smartScrollToBottom(true);
+        }
+      }, 80);
+
+      VV.addEventListener('resize', onViewportChange, { passive: true });
+      VV.addEventListener('scroll',  onViewportChange, { passive: true });
+    }
+
+    }
+
       
-      window.addEventListener('orientationchange', () => {
-        setTimeout(() => {
-          if (panel.classList.contains('open') && state.stickToBottom && !userScrolling) {
-            scheduleScrollToBottom({force: true}); // no force
-          }
-        }, 250);
-      });
+    window.addEventListener('orientationchange', () => {
+      setTimeout(() => {
+        if (IS_IOS) {
+          // iOS: use the latch
+          if (typeof kbLatchUpdate === 'function') kbLatchUpdate('orientation');
+        } else if (IS_ANDROID) {
+          // Android: recompute or clear if you prefer
+          if (VV) writeKb(occludedPx());
+          else writeKb(0);
+        }
+      }, 250);
+    }, { passive: true });
+
       
-  
+
       function setBusy(on) {
         typing.style.display = on ? 'flex' : 'none';
         if (on) {
@@ -561,16 +752,17 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
         if (!id) return showError('Missing widget ID.');
         const isIOS = typeof navigator !== 'undefined' && /iP(ad|hone|od)/.test(navigator.userAgent);
 
-        /* Speed up interaction on iOS 15–18 where click can be flaky inside
-           scrollable/positioned containers */
-        if (isIOS) {
-          sendEl.addEventListener('pointerdown', (e) => {
-            // Avoid double-fire if the form submit will run immediately after
-            if (sendEl.disabled) return;
-            e.preventDefault();   // we’ll call send() ourselves
-            send();
-          }, { passive: false });
-        }
+      // speed up tap on iOS inside scrollable container
+      if (/iP(hone|ad|od)/.test(navigator.userAgent)) {
+        sendEl.addEventListener('pointerdown', (e) => {
+          // If we’re about to submit anyway, avoid double fire
+          if (sendEl.disabled) return;
+          e.preventDefault();
+          // trigger the same path as Enter/submit
+          form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit', {cancelable:true}));
+        }, { passive: false });
+      }
+
         
         addMessage(text, 'user');
         history.push({ role: 'user', content: text });
