@@ -173,10 +173,21 @@
       </div>
     </footer>
 
-    <script>
+    <!-- <script>
       document.getElementById('year').textContent = new Date().getFullYear();
-    </script>
+    </script> -->
     <!-- <script src="scripts/script.js?v=1.2.1" data-auto-init="1"></script> -->
-    <script src="scripts/prosper_pharmacy.js" data-auto-init="1"></script>
+    <script src="scripts/prosper_pharmacy.js"></script>
+    <script>
+      window.addEventListener('DOMContentLoaded', () => {
+        window.medWidget = window.MedAssistWidget.init({
+          position: 'top-right',
+          id: 'oat_clinic',
+          endpoint: 'https://assist.medidoze.com/webhook/oat_clinic',
+          labels: { title: 'OAT Clinic', subtitle: '' },
+          verbose: false
+        });
+      });
+    </script>    
   </body>
   </html>

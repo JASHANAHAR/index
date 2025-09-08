@@ -126,7 +126,7 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
       return { container, shadow };
     }
   
-    function buildWidget(shadow, options) {
+    function buildWidget(shadow, options, container) {
       console.log('buildWidget function CALLED. Creating styles...');
       const cfg = { ...DEFAULTS, ...(options || {}) };
       cfg.labels = { ...DEFAULTS.labels, ...(options?.labels || {}) };
@@ -142,7 +142,8 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
           if (p.has('id')) cfg.id = p.get('id') || cfg.id;
         }
       } catch { }
-    
+
+
       // Fix: Ensure the style element is created properly and added to shadow DOM first
       const style = document.createElement('style');
       style.textContent = `
@@ -173,7 +174,7 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
         
         :host,.widget,.panel{ overscroll-behavior: contain; }
         .panel{
-          position:fixed; right:20px; bottom:84px; width:min(380px, 92vw); height:520px; background:#f7f8fb;
+          position:fixed;  width:min(380px, 92vw); height:520px; background:#f7f8fb;
           border-radius:16px; box-shadow:var(--shadow); overflow:hidden; border:1px solid rgba(255,255,255,.25);
           display:none; animation: pop .35s ease-out; backdrop-filter: blur(6px);touch-action: pan-y;
         }
@@ -187,7 +188,7 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
           border-radius:0 !important; border:none !important; background:#f7f8fb;
           overflow:hidden !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important;
         }
-        
+
         .head{
           padding:9px 13px;
           position: sticky;  /* safe because .head is outside the scrolling .stream */
@@ -286,7 +287,7 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
           .panel:not(.fullscreen){ right:12px; bottom:76px; width:94vw; height:72dvh; border-radius:0 !important; }
           .input{
             border-bottom-left-radius: 0;
-            border-bottom-right-radius: 0;
+            border-bottom-right-radius: 0;  
           }
           .typing {
             position: static;
@@ -400,6 +401,39 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
       panel.append(head, stream, typing, composer);
       wrap.append(launcherBtn, panel);
       shadow.append(style, wrap);
+          // --- Dynamic positioning ----------------------------------------------
+    const POSITION_OFFSETS = {
+      'bottom-right': {
+        container: { left: '', right: '20px', top: '', bottom: '20px' },
+        panel:     { left: '', right: '20px', top: '', bottom: '84px' }
+      },
+      'bottom-left': {
+        container: { left: '20px', right: '', top: '', bottom: '20px' },
+        panel:     { left: '20px', right: '', top: '', bottom: '84px' }
+      },
+      'top-right': {
+        container: { left: '', right: '20px', top: '20px', bottom: '' },
+        panel:     { left: '', right: '20px', top: '84px', bottom: '' }
+      },
+      'top-left': {
+        container: { left: '20px', right: '', top: '20px', bottom: '' },
+        panel:     { left: '20px', right: '', top: '84px', bottom: '' }
+      }
+    };
+
+    function applyPosition(pos) {
+      const cfgPos = POSITION_OFFSETS[pos] || POSITION_OFFSETS['bottom-right'];
+
+      // move the outer container (the launcher button)
+      Object.assign(container.style, cfgPos.container);
+
+      // move the panel (chat window)
+      ['left','right','top','bottom'].forEach(s => panel.style[s] = '');  // reset
+      Object.assign(panel.style, cfgPos.panel);
+    }
+
+    // apply initial position (options.position or default)
+    applyPosition(cfg.position || 'bottom-right');
       stream.appendChild(bottomSpacer);
   
       let history = [];
@@ -865,7 +899,20 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
       return {
         open: () => toggle(true),
         close: () => toggle(false),
-        setOptions: (opts) => Object.assign(cfg, opts || {}),
+        setOptions: (opts) => {
+          Object.assign(cfg, opts || {});
+          if (opts && 'position' in opts) applyPosition(cfg.position);
+        },        
+        setPosition: (pos) => {
+          applyPosition(pos);
+          // keep config in sync for future setOptions calls
+          cfg.position = pos;
+          // if panel is open and not mobile-fullscreen, ensure layout fits
+          if (panel.classList.contains('open') && !panel.classList.contains('fullscreen')) {
+            layoutStreamHeight();
+          }
+        },
+        
       };
     }
   
@@ -873,8 +920,8 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
       init(options) {
         ensureViewportMeta();
         const cfg = { ...DEFAULTS, ...(options || {}) };
-        const { shadow } = createWidgetRoot(cfg.position);
-        return buildWidget(shadow, options);
+        const { container, shadow } = createWidgetRoot(cfg.position);
+        return buildWidget(shadow, options, container);
       }
     };
   
