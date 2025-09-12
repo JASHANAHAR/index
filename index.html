@@ -182,10 +182,11 @@
       window.addEventListener('DOMContentLoaded', () => {
         window.medWidget = window.MedAssistWidget.init({
           position: 'top-right',
-          id: 'oat_clinic',
-          endpoint: 'https://assist.medidoze.com/webhook-test/oat_clinic',
+          id: 'prosper_pharmacy',
+          endpoint: 'https://assist.medidoze.com/webhook/prosper_pharmacy',
           labels: { title: 'OAT Clinic', subtitle: '' },
-          verbose: false
+          verbose: false,
+          clinicPhone: '+911234567890'
         });
       });
     </script>    

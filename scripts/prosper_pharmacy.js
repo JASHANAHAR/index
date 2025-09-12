@@ -689,6 +689,7 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
       } else {
         launcherIcon.appendChild(h('img', { src: (ASSETS + 'images/up-arrow1.svg'), alt: 'Chat', style: 'width:20px;height:20px;' }));
       }
+      updateCallBtn();
     }
     
 
@@ -698,6 +699,7 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
         if (isMobile()) panel.classList.add('fullscreen');
         else panel.classList.remove('fullscreen');
       }
+      updateCallBtn();
     });
 
     let userScrolling = false;
@@ -746,6 +748,7 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
         if (panel.classList.contains('open') && state.stickToBottom && !userScrolling) {
           scheduleScrollToBottom({force: true}); // no force
         }
+        updateCallBtn();
       }, 250);
     });
     
@@ -859,6 +862,39 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
         setBusy(false);
         forceFocusComposer(); 
       }
+    }
+    // === DROP THIS INSIDE buildWidget(...) AFTER `panel.append(head, stream, typing, composer);` ===
+
+    // 1) Create a tiny mobile-only Call button (hidden by default)
+    const CALL_NUMBER = (options && options.clinicPhone) || '+911234567890'; // set your number here
+    const callBtn = h(
+      'a',
+      {
+        href: `tel:${CALL_NUMBER}`,
+        title: 'Call clinic',
+        style: {
+          position: 'absolute',
+          left: '12px',
+          bottom: 'calc(var(--composer-h, 58px) + 12px)',
+          zIndex: '4',
+          padding: '8px 12px',
+          borderRadius: '999px',
+          background: '#10b981',
+          color: '#fff',
+          fontWeight: '600',
+          fontSize: '13px',
+          textDecoration: 'none',
+          boxShadow: '0 6px 16px rgba(0,0,0,.18)',
+          display: 'none' // hidden until mobile + panel open
+        }
+      },
+      'Call'
+    );
+    panel.appendChild(callBtn);
+
+    // 2) Helper to show/hide based on device + open state
+    function updateCallBtn() {
+      callBtn.style.display = (panel.classList.contains('open') && isMobile()) ? 'inline-flex' : 'none';
     }
 
     // // --- TEST ONLY: delay the assistant's reply while showing the "..." typing dots ---
