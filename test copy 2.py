@@ -20,7 +20,7 @@ from pdf2image.pdf2image import pdfinfo_from_path
 import pytesseract
 
 # ====== CONFIG ======
-INPUT_DIR     = r"E:\Projects\index\pdfs"               # folder with PDFs
+INPUT_DIR     = r"E:\Projects\index\pdf"               # folder with PDFs
 OUTPUT_DIR    = r"E:\Projects\index\ocr_output_bulk"    # results are mirrored per-PDF here
 POPPLER_DIR   = r"E:\tools\poppler-25.07.0\Library\bin" # has pdftoppm.exe, pdfinfo.exe
 TESS_EXE      = r"C:\Program Files\Tesseract-OCR\tesseract.exe"

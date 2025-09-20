@@ -1,0 +1,4 @@
+curl -X PUT "https://api-us-3.vonage.com/v1/calls/e45932ad-1302-4e43-8615-1a4d65e5f9ec" \
+  -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHBsaWNhdGlvbl9pZCI6ImY2NGM0N2YwLTIxNmUtNDVkOC1iZWE2LWE2ODQzNThmOTA5YiIsImlhdCI6MTc1ODM2MjQyNiwiZXhwIjoxNzU4MzYyNzI2LCJqdGkiOiJzdHQtMTc1ODM2MjQyNiJ9.G--MIprAFD5SUfm-ip4TuEUdmuwyBAd6E14BYdfn4-OOJAQ2kHU3Qq862tQEAvHJUJG44WzPPQAfV3geJAKGGAMoHPJ6T1S-dXIP12LoyY37zrvVrZGu4MtTDp-fBpCXKueOXAVNEW5GiD7QqH18ET122qr9W3ZyHnvmiFY4cP_l2P1BxTlFvQBE8QGZVg1Dhg3mXTyX5MlyQuVt6Z4hIyKLP1FwTjhnrPE8eoDMqtJQQ-_tyi9rXHxfgU2VQAQcXqiAiVP4oXoO2dWI0SNk2dcSiZSHZ-hZsoToQOyo8_4wV_A3PE6JQ9urO1IMOQNArxrvhaRDJ7f-KlX7QbQrdw" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello world","voice_name":"Amy"}'

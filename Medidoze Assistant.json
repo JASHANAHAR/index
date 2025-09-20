@@ -1,0 +1,1801 @@
+{
+  "name": "Medidoze Assistant",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Normalize VS output into clean Q&A docs for the LLM\nconst out = [];\nconst seen = new Set();\n\nfor (const item of items) {\n  const j = item.json ?? {};\n  const d = j.document ?? j;  // handles both shapes\n\n  // score / similarity\n  const score =\n    j.score ?? d.score ?? j.similarity ?? d.similarity ?? null;\n\n  // extract fields\n  let question = (d.question ?? j.question ?? '').trim();\n  let answer   = (d.answer   ?? j.answer   ?? '').trim();\n\n  // if no explicit Q/A, try to split from pageContent or content\n  if (!question && !answer) {\n    const content = (d.pageContent ?? d.content ?? '').trim();\n    if (content) {\n      // naive heuristic: first sentence = question, rest = answer\n      const parts = content.split(/[?]\\s*/); \n      if (parts.length > 1) {\n        question = parts[0].trim() + \"?\";\n        answer   = parts.slice(1).join(\" \").trim();\n      } else {\n        // if can't split, treat whole thing as \"answer\"\n        answer = content;\n      }\n    }\n  }\n\n  // skip if still empty\n  if (!question && !answer) continue;\n\n  // basic de-dup (based on first 200 chars of combined Q+A)\n  const sig = (question + answer).slice(0, 500);\n  if (seen.has(sig)) continue;\n  seen.add(sig);\n\n  out.push({\n    json: {\n      question,\n      answer,\n      score,\n    }\n  });\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1552,
+        -576
+      ],
+      "id": "4bbaf00b-fdf0-4d33-989c-93b895fec56a",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "oat_clinic",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2576,
+        -128
+      ],
+      "id": "a2dd7c9a-6d41-4f9f-8193-c498699e27cf",
+      "name": "Webhook",
+      "webhookId": "03ff291a-7f73-48f2-8905-14b6a61fddfa"
+    },
+    {
+      "parameters": {
+        "mode": "load",
+        "tableName": "={{ $json.body.id }}",
+        "prompt": "={{ $json.body.message }}",
+        "topK": 5,
+        "includeDocumentMetadata": false,
+        "options": {
+          "columnNames": {
+            "values": {
+              "contentColumnName": "content"
+            }
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePGVector",
+      "typeVersion": 1.3,
+      "position": [
+        -1904,
+        -672
+      ],
+      "id": "cd582ea5-5641-4780-a7c8-2da0f866be65",
+      "name": "Postgres PGVector Store",
+      "notesInFlow": false,
+      "credentials": {
+        "postgres": {
+          "id": "6fQd1nxuXuWfWBFp",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.link }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1840,
+        -272
+      ],
+      "id": "b7d7a532-f18b-4cd2-aac5-fe4355a141da",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "link_store",
+          "mode": "list",
+          "cachedResultName": "link_store"
+        },
+        "returnAll": true,
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $json.body.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2032,
+        -272
+      ],
+      "id": "fb747720-1122-4e0b-8b55-50822efe9064",
+      "name": "Select rows from a table",
+      "credentials": {
+        "postgres": {
+          "id": "6fQd1nxuXuWfWBFp",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/embedding-001"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1840,
+        -448
+      ],
+      "id": "429f0664-5a90-4acc-a0a3-d27139d60fab",
+      "name": "Embeddings Google Gemini",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "nP1ErPBHb2JefCfu",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "destinationKey": "text",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -1552,
+        -272
+      ],
+      "id": "cb0b4e5b-18c5-4d9d-8df6-0f7dfef8a234",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1328,
+        -416
+      ],
+      "id": "2f601444-a29c-46b6-b516-7e92596f9441",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Function: Robust real-world classifier & router for clinic chatbot\n// Input:  $json.user_message (string), optional $json.full_context, $json.top_score (0..1)\n// Output: merges classification, routing, and query_expansions back into $json\n\nconst raw = String(\n  $('Webhook').first().json?.body?.message\n  ?? ''\n).trim();\nconst history = String($json.full_context || \"\");\nconst lc0 = raw.toLowerCase();\n\n// ---------- helpers ----------\nfunction normalize(s){\n  // strip accents, emojis, repeated chars, and extra whitespace\n  let x = s.normalize('NFKD').replace(/[\\u0300-\\u036f]/g,'');\n  x = x.replace(/[\\u{1F300}-\\u{1FAFF}\\u{1F100}-\\u{1F1FF}]/gu, ''); // emojis\n  x = x.replace(/(.)\\1{2,}/g, '$1$1'); // \"pleaaase\" -> \"pleaase\"\n  return x.replace(/\\s+/g, ' ').trim();\n}\nconst lc = normalize(lc0);\nconst estTokens = (s) => Math.ceil(s.length/4);\nconst toks = estTokens(raw);\nconst ctxTurns = (history.match(/\\b(User|Assistant):/g) || []).length;\n\n// quick language hints\nconst hasDevanagari = /[\\u0900-\\u097F]/.test(raw);\nconst hiHints = /\\b(kya|kab|kahan|kidhar|kaise|fees|kiraya|daam|buk|book|timing|samay|doctor|dawa|dard|bimari)\\b/i.test(lc);\n\n// small synonym banks (english + romanized hindi)\nconst lex = {\n  greet: /\\b(hi|hello|hey|namaste|good (morning|afternoon|evening))\\b/i,\n  thanks: /\\b(thanks|thank you|ty|shukriya|ok|okay|great)\\b/i,\n\n  // admin subintents\n  book: /\\b(appointment|book|reschedul|cancel|slot|availability|walk[- ]?in|visit|consult|register)\\b|ap+oi?nt|apomt|buk/i,\n  hours: /\\b(hours?|timings?|open|close|closing|holiday|weekend|sunday|today|tomorrow)\\b|\\bsamay\\b/i,\n  location: /\\b(address|location|branch|directions?|map|landmark|near me|nearest|parking|distance)\\b|\\b(kaha|kahaan|kidhar|kidhr|address pls|loc)\\b/i,\n  contact: /\\b(phone|call|number|mobile|whats?app|email|support)\\b/i,\n  price: /\\b(price|cost|fee|fees|charge|rate|cash|card|upi|payment|discount)\\b|\\b(insurance|mediclaim|coverage|cashless|network|copay)\\b/i,\n  reports: /\\b(report|lab|test results?|prescription|rx|invoice|receipt|records?)\\b/i,\n  doctor: /\\b(doctor|physician|specialist|gyne|gyn|cardio|derma|ent|pediatric|female doctor|who is available)\\b/i,\n  pharmacy: /\\b(pharmacy|chemist|drugstore|med(?:s|icines?)|refill|prescription refill)\\b/i,\n};\n\n// medical risk cues\nconst medHigh = /\\b(dose|dosage|contraindicat|pregnan|prega|lactat|child|pediatric|infant|newborn|chest pain|shortness of breath|overdose|poison|severe|emergenc|suicid|self[- ]?harm|interaction|drug interaction|mix with|alcohol|bleeding)\\b/i;\nconst medGen  = /\\b(symptom|side effect|treatment|remedy|manage|pain|fever|nausea|vomit|bp|blood pressure|sugar|diabetes|asthma|allerg|infection|antibiotic|flu|cough|cold|headache|migraine|rash)\\b/i;\nconst units   = /\\b(\\d+(\\.\\d+)?\\s?(mg|ml|mcg|kg|lbs|%|°c|years?|yrs?|months?|weeks?|days?|hours?|times? a day))\\b/i;\n\n// short one-word admin shorthands → map to subintent\nconst oneWordMap = {\n  'hours':'hours','timings':'hours','timing':'hours','open':'hours','closing':'hours','today':'hours',\n  'location':'location','locations':'location','address':'location','addr':'location','loc':'location','map':'location',\n  'phone':'contact','call':'contact','number':'contact','whatsapp':'contact','email':'contact',\n  'price':'price','fees':'price','fee':'price','charges':'price','cost':'price','insurance':'price','mediclaim':'price',\n  'appointment':'book','appointments':'book','book':'book','booking':'book','slots':'book','availability':'book',\n  'pharmacy':'pharmacy','chemist':'pharmacy','refill':'pharmacy',\n  'reports':'reports','report':'reports','results':'reports','invoice':'reports','receipt':'reports',\n};\n\n// ----------- scoring -----------\nconst scoreParts = [];\n// length\nscoreParts.push(toks>160?20:toks>100?15:toks>40?10:toks>15?5:0);\n// question type\nif (/\\b(what|when|where|who)\\b/.test(lc)) scoreParts.push(5);\nif (/\\b(how|why|compare|which|versus|vs)\\b/.test(lc)) scoreParts.push(10);\n// multi-intent\nconst multiCount = (lc.split(/[?!.]/).join(' ').match(/\\b(and|also|,|\\/)\\b/g)||[]).length;\nif (multiCount>=1) scoreParts.push(10);\n// numbers/units\nif (units.test(lc)) scoreParts.push(7);\n\n// medical cues\nlet intent = 'other';\nif (medHigh.test(lc)) { scoreParts.push(30); intent = 'medical'; }\nelse if (medGen.test(lc)) { scoreParts.push(15); intent = 'medical'; }\n\n// admin cues & subintent detection\nlet subintent = null;\nconst subMatches = [];\nfor (const [k, rx] of Object.entries(lex)) {\n  if (['greet','thanks'].includes(k)) continue;\n  if (rx.test(lc)) subMatches.push(k);\n}\nif (subMatches.length) {\n  intent = intent==='medical' ? 'medical' : 'admin';\n  // prefer more specific categories if multiple\n  const priority = ['book','hours','location','contact','price','doctor','reports','pharmacy'];\n  subintent = priority.find(p => subMatches.includes(p)) || subMatches[0];\n}\n\n// one-word shorthands\nif (!subintent) {\n  const word = lc.replace(/[^\\p{L}\\p{N}\\s]/gu,'').trim();\n  if (oneWordMap[word]) {\n    intent = intent==='medical' ? 'medical' : 'admin';\n    subintent = oneWordMap[word];\n  }\n}\n\n// conversation depth boosts complexity a bit\nif (ctxTurns >= 2) scoreParts.push(8);\n\n// retrieval-aware adjustments (if available later in the flow)\nlet score = scoreParts.reduce((a,b)=>a+b,0);\nconst top = typeof $json.top_score === 'number' ? $json.top_score : null;\nif (top !== null) {\n  if (top < 0.65) score += 30;\n  else if (top < 0.75) score += 15;\n  else if (top >= 0.85) score -= 8; // confidence bonus\n}\n\n// difficulty buckets\nlet difficulty = score>=70?'very_hard':score>=35?'hard':'easy';\n\n// admin single-word queries should not be over-penalized\nif (intent==='admin' && toks<=8 && !medHigh.test(lc)) difficulty = 'easy';\n\n// emergency safety override\nconst emergency = /\\b(chest pain|severe breath(ing)?|unconscious|stroke|heart attack|suicid|self[- ]?harm|poison|overdose)\\b/i.test(lc);\nif (emergency) { intent = 'medical'; difficulty = 'very_hard'; }\n\n// ----------- routing -----------\nlet model = difficulty==='easy' ? 'models/gemini-2.5-flash-lite'\n          : difficulty==='hard' ? 'models/gemini-2.5-flash'\n          : 'models/gemini-2.5-pro';\n// medical always at least Flash\nif (intent==='medical' && model==='models/gemini-2.5-flash-lite') model = 'models/gemini-2.5-flash';\n\n\n// ---------- query expansions for search ----------\nconst expansions = new Set();\n\nif (intent==='admin') {\n  if (subintent==='location') {\n    ['clinic address','clinic location','directions','map','nearest branch','parking'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='hours') {\n    ['opening hours','today hours','clinic timings','holiday hours','sunday hours'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='book') {\n    ['book appointment','appointment availability','online booking','reschedule appointment','cancel appointment'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='price') {\n    ['consultation fee','treatment cost','insurance accepted','cashless','network hospitals','coverage'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='contact') {\n    ['phone number','call clinic','whatsapp','email address','support'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='pharmacy') {\n    ['pharmacy near clinic','prescription refill','medicine availability','chemist hours'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='reports') {\n    ['download reports','get lab results','collect reports','invoice copy','prescription copy'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='doctor') {\n    ['doctor availability','which doctor today','specialist availability','female doctor'].forEach(s=>expansions.add(s));\n  }\n}\n\n// minimal Hindi/romanized hints for admin (helps when your RAG indexes have english)\nif (hiHints || hasDevanagari) {\n  if (subintent==='location') ['address','kahan','kidhar','location','map'].forEach(s=>expansions.add(s));\n  if (subintent==='hours') ['timings','kab khula','samay','open time','close time'].forEach(s=>expansions.add(s));\n  if (subintent==='book') ['appointment kaise book','slot','buk','reschedule','cancel'].forEach(s=>expansions.add(s));\n  if (subintent==='price') ['fees','daam','price','insurance','mediclaim'].forEach(s=>expansions.add(s));\n}\n\nif (intent==='admin' && !subintent) {\n  disambiguation_needed = true;\n  disambiguation_hint = 'Did you mean hours, location, booking, price, or contact info?';\n}\nif (intent==='medical' && !medHigh.test(lc) && !medGen.test(lc) && toks<6) {\n  disambiguation_needed = true;\n  disambiguation_hint = 'Could you share a bit more about the symptom or question?';\n}\n\n\n// final export\nreturn [{\n  json: {\n    ...$json,\n    classification: {\n      score,\n    },\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1104,
+        -416
+      ],
+      "id": "133298f1-166a-470d-87ad-3f265349e875",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input: expects $json.classification.score (number) and optional $json.top_score (0..1)\n// Output: sets $json.routing with model + params\n\nconst cls = $json.classification || {};\nlet score = Number(cls.score) || 0;\n\n// Adjust score by retrieval quality (optional)\nconst top = (typeof $json.top_score === 'number') ? $json.top_score : null;\nif (top !== null) {\n  if (top < 0.65) score += 30;\n  else if (top < 0.75) score += 15;\n}\nscore = Math.max(0, Math.min(100, score)); // clamp 0..100\n\n// Simple rule: score > 30 => Pro, else Flash\nconst usePro = score > 30;\nconst model  = usePro ? 'models/gemini-2.5-pro' : 'models/gemini-2.5-flash';\n\nconst out = {\n  ...$json,\n  routing: {\n    score,\n    tier: usePro ? 'pro' : 'flash',\n    model,\n    params: {\n      temperature: 0.3,\n      topP: 0.8,\n      candidateCount: 1,\n    },\n    retrieval: {\n      k: usePro ? 5 : 3,\n      minScore: usePro ? 0.78 : 0.74,\n    },\n  },\n};\n\nreturn [{ json: out }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        -416
+      ],
+      "id": "0b2c7d4f-cb63-4845-b95e-196057131d88",
+      "name": "Code2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node — prepare POLICY + COMPILED + gemini_body (robust, safe)\n// Mode: Run once for all items\n\n// ---------- helpers ----------\nfunction nodeRan(name) {\n  try {\n    const h = $(name);\n    const first = h.first();\n    return !!(first && first.json);\n  } catch { return false; }\n}\n\nfunction firstTextFrom(names, fields = ['text','pageContent','content']) {\n  for (const name of names) {\n    try {\n      if (!nodeRan(name)) continue;\n      const item = $(name).first();\n      for (const f of fields) {\n        if (item.json?.[f] != null) return String(item.json[f]);\n      }\n    } catch {}\n  }\n  return undefined;\n}\n\nconst OFFICIAL_NODE_CANDIDATES = ['Extract from File', 'Merge'];\n\n\n// OFFICIAL INFO\nlet officialStr =\n  firstTextFrom(OFFICIAL_NODE_CANDIDATES) ??\n  (typeof $json.official_info === 'string'\n    ? $json.official_info\n    : JSON.stringify($json.official_info ?? {}, null, 2));\nofficialStr = String(officialStr || '');\n\nlet refsStr = '';\ntry {\n  // CHANGE THIS to the node that outputs { question, answer }\n  const qaNodeName = 'Code';  // e.g., 'Code2' or 'Code7' etc.\n\n  // Prefer Q/A items if present\n  if (nodeRan(qaNodeName)) {\n    const qaItems = $(qaNodeName).all() || [];\n    const blocks = qaItems.map(it => {\n      const j = it?.json || {};\n      const q = String(j.question ?? '').trim();\n      const a = String(j.answer   ?? '').trim();\n\n      if (q || a) return `Question: ${q || '(unknown)'}\\nAnswer: ${a || '(no answer found)'}`;\n\n      // fallback: plain text chunk if no explicit Q/A\n      const txt = String(j.pageContent ?? j.text ?? j.content ?? '').trim();\n      return txt ? `A: ${txt}` : '';\n    }).filter(Boolean);\n\n    refsStr = blocks.join('\\n\\n---\\n\\n');\n  }\n\n  // FINAL fallback: if you still want to read from 'Merge' when no Q/A\n  if (!refsStr && nodeRan('Merge')) {\n    const arr = $('Merge').all() || [];\n    refsStr = arr.map(it => {\n      const j = it?.json || {};\n      return String(j.pageContent ?? j.text ?? j.content ?? '').trim();\n    }).filter(Boolean).join('\\n');\n  }\n} catch {\n  refsStr = '';\n}\n// Get raw body\nconst body = $('Webhook').first().json.body || {};\nconst session_id = String(body.session_id ?? '').trim();\n// Current user message (string)\nconst userMsg = String(body.message ?? '').trim();\nconst timenow = String(body.time.local ?? '').trim();\n// Raw history (array of turns or partials)\nconst historyRaw = Array.isArray(body.history) ? body.history : [];\n\n// Basic sanitizer\nfunction sanitizeText(s) {\n  return String(s || '')\n    .replace(/\\u0000/g, '')        // strip nulls\n    .replace(/\\s+/g, ' ')          // collapse whitespace\n    .trim()\n    .slice(0, 2000);               // cap each turn length\n}\n\n// Normalize different history shapes → [{role:'user'|'assistant', content:'...'}]\nfunction normalizeHistory(arr) {\n  return arr.map((h, i) => {\n    let role = (h?.role || h?.from || '').toLowerCase();\n    if (role !== 'user' && role !== 'assistant') role = (i % 2 === 0) ? 'user' : 'assistant';\n\n    const content = sanitizeText(\n      h?.content ?? h?.text ?? h?.message ?? (typeof h === 'string' ? h : '')\n    );\n    return { role, content };\n  }).filter(t => t.content);\n}\n\n// Build a trimmed transcript (last N turns)\nconst turns = normalizeHistory(historyRaw);\n\n// Keep only the most recent 8–10 turns to control context size\nconst MAX_TURNS = 10;\nconst recentTurns = turns.slice(-MAX_TURNS);\n\n// Render to a compact transcript for your COMPILED\nconst convo = recentTurns.map(t => {\n  const speaker = t.role === 'assistant' ? 'Assistant' : 'User';\n  return `${speaker}: ${t.content}`;\n}).join('\\n');\n\n\nconst name = $('Webhook').first().json.body.id || $('HTTP Request5').first().json.body.id\n// ---------- PROFESSIONAL POLICY (system prompt) ----------\nconst POLICY = [\n  `• Pharmacy_name: ${name}`,\n  \"You are Pharmacy_name AI, a smart, friendly, and efficient assistant for Pharmacy_name.\",\n  \"I always speak in the first person (“I”) as the clinic’s front-desk voice. I may say “our clinic” when helpful.\",\n  \"Write Pharmacy_name as Pharmacy Name with capitalization.\",\n  \"==============================\",\n  \"CORE RESPONSE LOGIC (priority order)\",\n  \"==============================\",\n\n  // PRECEDENCE\n  \"RULE 0 — PRECEDENCE (OFFICIAL OVER REFERENCES)\",\n  \"• I always use [OFFICIAL CLINIC INFO] first.\",\n  \"• I only use [REFERENCE Q&A RECORDS] if they are a strong semantic match (similarity ≥ 0.90) and do not conflict with [OFFICIAL CLINIC INFO].\",\n  \"• If no information exists in either source, I use the uncertainty template in RULE 7.\",\n  \"• I never guess or invent details; if a fact is missing, I use RULE 7.\",\n\n  // DIRECT PHONE HANDOFF FOR MEDICAL TOPICS\n  \"RULE 1 — DIRECT PHONE HANDOFF (medical conditions / diseases / medications / prescriptions)\",\n  \"• For any question about a medical condition, disease, symptom, medication, dosing, prescription/refill, side effects, or lab results, I do not provide medical detail.\",\n  \"• I reply using this template and I insert phone number(s) from [OFFICIAL CLINIC INFO]:\",\n  \"  Please call the clinic directly and our staff will be happy to help you.\",\n  \"  For assistance, please call the clinic directly:\",\n  \"  • [phone numbers from OFFICIAL CLINIC INFO as bullets]\",\n  \"• If multiple numbers exist, I list each as a separate • bullet with its label (e.g., location).\",\n  \"• If no numbers are available in [OFFICIAL CLINIC INFO], I use the uncertainty template (RULE 7).\",\n\n\n  // EMERGENCY-ONLY STATEMENT\n  \"RULE 1A — EMERGENCY INSTRUCTIONS\",\n  \"• We do not treat emergencies. If the user describes emergency symptoms or says it is an emergency, I respond exactly with:\",\n  \"  We do not treat emergencies. If you are experiencing chest pain or any emergency, please call 911 or go to the nearest emergency department immediately.\",\n  \"• I do not include booking or any other information in this case.\",\n\n  // NON-MEDICAL QUERIES\n  \"RULE 2 — NON-MEDICAL QUESTIONS\",\n  \"• For hours, phone, location, services, insurance, and paperwork, I use [OFFICIAL CLINIC INFO].\",\n  \"• If unavailable, I use the uncertainty template (RULE 7).\",\n  \"• I may ask one clarifying question only if truly necessary.\",\n\n  // CONTACT & LOGISTICS AUTOINCLUDE\n  \"RULE 2A — CONTACT & LOGISTICS AUTOINCLUDE\",\n  \"• If the user mentions website, phone, location, visits, or clinic hours, I include those details from [OFFICIAL CLINIC INFO] in my answer.\",\n  \"• Phone: include the clinic phone number(s) exactly as listed; if multiple, present as • bullets.\",\n  \"• Website: include the primary site and the booking link if available.\",\n  \"• Location/Visits: include address(es) and any visit instructions; use • bullets if multiple.\",\n  \"• Hours: include hours as listed in [OFFICIAL CLINIC INFO]; if locations differ, bullet per location.\",\n  \"• If any item is missing, I use the uncertainty template (RULE 7).\",\n\n  // BOOKING & APPOINTMENTS\n  \"RULE 3 — BOOKING & APPOINTMENTS\",\n  \"• When relevant (and only if Rules 1 or 1A did not apply), I append:\",\n  \"  For an accurate diagnosis and treatment plan, it’s always best to consult with a healthcare provider. You can book an appointment with us online or by phone:\",\n  `  • Book Online: in [OFFICIAL CLINIC INFO]`,\n  `  • Call Us: in [OFFICIAL CLINIC INFO]`,\n\n  // GREETINGS\n  \"RULE 4 — GREETINGS\",\n  \"• If the first turn is a simple greeting, I reply with a time-aware greeting:\",\n  \"  • Before 12:00 → Good morning\",\n  \"  • 12:00–17:00 → Good afternoon\",\n  \"  • After 17:00 → Good evening\",\n  \"• Otherwise, I skip the greeting and answer directly.\",\n\n  // INSURANCE, BILLING, PAPERWORK\n  \"RULE 5 — INSURANCE, BILLING, PAPERWORK\",\n  \"• Insurance: coverage depends on plan and service. If accepted insurers are listed in [OFFICIAL CLINIC INFO], I use them; otherwise I advise calling.\",\n  \"• Billing: I never confirm costs, discounts, or special offers; I advise checking the website or calling.\",\n  \"• Paperwork: I suggest bringing ID, insurance card, past records, and referrals if applicable; for minors, I mention parent/guardian consent.\",\n\n  // NO PROMISES / COMMITMENTS\n  \"RULE 6 — NO PROMISES OR COMMITMENTS\",\n  \"• I never guarantee outcomes, cures, discounts, special offers, or specific wait times.\",\n  \"• I never commit to prices or services that are not present in [OFFICIAL CLINIC INFO].\",\n\n  // UNCERTAINTY TEMPLATE\n  \"RULE 7 — UNCERTAINTY TEMPLATE\",\n  \"• If uncertain, I respond with one of:\",\n  \"  • I can’t confirm that right now. Please check our website or call the front desk for the latest information.\",\n  \"  • I’m not certain I have the updated details. Please visit our website or call us so we can confirm this for you.\",\n  \"• I do not loop or restate the same unconfirmed claim.\",\n\n  // OUTPUT & STYLE\n  \"RULE 8 — OUTPUT FORMAT AND STYLE (PLAIN TEXT ONLY)\",\n  \"• Plain text only. No Markdown, no HTML, no emojis.\",\n  \"• I use simple language (about 8th-grade level) and avoid jargon. If a medical term is unavoidable, I explain it simply.\",\n  \"• Replies are concise (3–6 sentences) unless the user asks for more.\",\n  \"• When listing multiple items, I use plain bullets with the Unicode dot:\",\n  \"  • Example item\",\n  \"• Each bullet is short (under 20 words).\"\n].join(\"\\n\");\n// ---------- COMPILED user/context ----------\nconst COMPILED = [\n  \"OFFICIAL CLINIC INFO:\",\n  officialStr,\n  \"\",\n  \"REFERENCE Q&A RECORDS:\",\n  refsStr || \"None\",\n  \"\",\n  \"CONVERSATION HISTORY:\",\n  convo,\n  \"\",\n  \"CURRENT TIME:\",\n  timenow,\n  \"\",\n  \"USER QUESTION:\",\n  userMsg\n].join(\"\\n\");\n\n// ---------- Final request body for Gemini ----------\nconst gen = $json.routing?.params || {};\nconst gemini_body = {\n  systemInstruction: { role: \"system\", parts: [{ text: POLICY }] },\n  contents: [{ role: \"user\", parts: [{ text: COMPILED }] }],\n  generationConfig: {\n    temperature: (typeof gen.temperature === 'number') ? gen.temperature : 0.3,\n    topP: (typeof gen.topP === 'number') ? gen.topP : 0.8,\n    candidateCount: 1,\n  }\n};\n\nreturn [{\n  json: {\n    ...$json,\n    gemini_body,\n    session_id,\n    timenow\n  }}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        -416
+      ],
+      "id": "ac7af109-c781-4a8b-ae88-12a9cd48efc5",
+      "name": "Code3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const cand  = ($json.candidates || [])[0] || {};\nconst parts = (cand.content && cand.content.parts) || [];\nconst text  = parts.map(p => p.text || \"\").join(\"\").trim();\nconst block = $json.promptFeedback?.blockReason || cand.finishReason || null;\n\nreturn [{\n  json: {\n    answer: text || (block ? `I couldn’t answer that safely (${block}).` : \"No response.\"),\n    raw: $json,\n    session_id: $('Code3').first().json.session_id ,\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        -416
+      ],
+      "id": "07fdb409-bf2c-4128-a3dd-46b8031577c4",
+      "name": "Code4"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        16,
+        -416
+      ],
+      "id": "d953a6ca-3b14-4256-b811-11f487e37b2e",
+      "name": "Respond to Webhook",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/{{$json.routing.model}}:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.gemini_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -432,
+        -416
+      ],
+      "id": "0595229b-779b-42f0-ac8c-6b4fdced17ee",
+      "name": "HTTP Request1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "nP1ErPBHb2JefCfu",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nINSERT INTO public.{{ $json.table_name }} (session_id, created_at, conversation)\nVALUES (\n  '{{ $json.session_id }}',\n  '{{ $json.created_at }}',\n  jsonb_build_array('{{ JSON.stringify($json.convo_delta).replace(/'/g,\"''\") }}'::jsonb)\n)\nON CONFLICT (session_id) DO UPDATE\nSET conversation = COALESCE({{ $json.table_name }}.conversation, '[]'::jsonb)\n                   || jsonb_build_array('{{ JSON.stringify($json.convo_delta).replace(/'/g,\"''\") }}'::jsonb),\n    created_at = {{ $json.table_name }}.created_at\nRETURNING id, session_id, created_at, conversation;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        464,
+        -512
+      ],
+      "id": "386bd6d7-0879-4dc9-9977-49d35b41a06a",
+      "name": "Execute a SQL query",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "6fQd1nxuXuWfWBFp",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "edb9493a-e0ca-4914-989e-c3146fc8192e",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notExists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        688,
+        -320
+      ],
+      "id": "f724821d-422a-4dbe-9f1f-300804709616",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// from your pipeline\nconst body = $('Webhook').first().json.body || '';\nconst sessionId = $input.first().json.session_id           // coming from the widget\nconst user = String(body.message ?? '').trim();\nconst response = $input.first().json.answer || '';\nconst id = String(body.id ?? '').trim();\nconst now = String(body.time.local ?? '').trim();\n// one new convo element\nconst newItem = { user, response, at: now };\nconst table_name = `${id}_logs`;\n// pass to next node as a single item with params for SQL\nreturn [\n  {\n    json: {\n      session_id: sessionId,\n      created_at: now,\n      table_name,\n      convo_delta: newItem,\n      id\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -416
+      ],
+      "id": "3184d887-c6eb-4e4f-b17b-ef9a6b699359",
+      "name": "Code5"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code node\nconst user = $('Code5').item.json.convo_delta?.user ?? '';\nconst response = $('Code5').item.json.convo_delta?.response ?? '';\n\nreturn [\n  {\n    json: {\n      content: {\n        parts: [\n          { text: `${user} ${response}` }\n        ]\n      }\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        -320
+      ],
+      "id": "a65b81cc-4870-481d-af08-72d3f7868708",
+      "name": "Code6"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code Node — format Gemini embeddings for Postgres\nconst convo = $('Code5').first();\nconst q = convo.json.convo_delta.user || \"\";\nconst a = convo.json.convo_delta.response || \"\";\nconst id = convo.json.id\nconst vec = $json.embedding?.values;\nif (!vec || !Array.isArray(vec)) throw new Error('No embedding array');\n// Build \"content\" (for semantic search, Q + A combined)\nconst content = `${q}? ${a}`;\n// Return formatted row for SQL insert\nreturn [{\n  json: {\n    question: q,\n    answer: a,\n    embedding: vec,\n    content,\n    id\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        -320
+      ],
+      "id": "625c177b-2de2-49e2-977f-ea1218d938a0",
+      "name": "Code7"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent/",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1136,
+        -320
+      ],
+      "id": "519a89b8-12ad-4cd1-81c2-537a001e11ba",
+      "name": "HTTP Request2",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "nP1ErPBHb2JefCfu",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id FROM oat_clinic WHERE question =$$ {{ $json.convo_delta.user }} $$ LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        464,
+        -320
+      ],
+      "id": "04f050fb-cd64-4578-a409-bd021ec41451",
+      "name": "Execute a SQL query1",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "6fQd1nxuXuWfWBFp",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO {{ $json.id }} (question, answer, embedding, content)\nVALUES (\n  $$ {{ $json.question }} $$,\n  $$ {{ $json.answer }} $$,\n  '[{{ $json.embedding }}]'::vector,\n  $$ {{ $json.content }} $$\n)\nON CONFLICT (question) DO NOTHING\nRETURNING id;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1584,
+        -320
+      ],
+      "id": "5caff522-d3e3-4522-af3d-b625b0aa19a0",
+      "name": "Execute a SQL query2",
+      "credentials": {
+        "postgres": {
+          "id": "6fQd1nxuXuWfWBFp",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize VS output into clean Q&A docs for the LLM\nconst out = [];\nconst seen = new Set();\n\nfor (const item of items) {\n  const j = item.json ?? {};\n  const d = j.document ?? j;  // handles both shapes\n\n  // score / similarity\n  const score =\n    j.score ?? d.score ?? j.similarity ?? d.similarity ?? null;\n\n  // extract fields\n  let question = (d.question ?? j.question ?? '').trim();\n  let answer   = (d.answer   ?? j.answer   ?? '').trim();\n\n  // if no explicit Q/A, try to split from pageContent or content\n  if (!question && !answer) {\n    const content = (d.pageContent ?? d.content ?? '').trim();\n    if (content) {\n      // naive heuristic: first sentence = question, rest = answer\n      const parts = content.split(/[?]\\s*/); \n      if (parts.length > 1) {\n        question = parts[0].trim() + \"?\";\n        answer   = parts.slice(1).join(\" \").trim();\n      } else {\n        // if can't split, treat whole thing as \"answer\"\n        answer = content;\n      }\n    }\n  }\n\n  // skip if still empty\n  if (!question && !answer) continue;\n\n  // basic de-dup (based on first 200 chars of combined Q+A)\n  const sig = (question + answer).slice(0, 500);\n  if (seen.has(sig)) continue;\n  seen.add(sig);\n\n  out.push({\n    json: {\n      question,\n      answer,\n      score,\n    }\n  });\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1344,
+        1760
+      ],
+      "id": "dcdbd500-71c3-47a4-acc4-febf94ba345f",
+      "name": "Code8"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prosper_pharmacy",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2368,
+        1872
+      ],
+      "id": "20776c2a-9901-4898-97b5-5997ddb73f61",
+      "name": "Webhook1",
+      "webhookId": "03ff291a-7f73-48f2-8905-14b6a61fddfa"
+    },
+    {
+      "parameters": {
+        "mode": "load",
+        "tableName": "={{ $json.body.id }}",
+        "prompt": "={{ $json.body.message }}",
+        "topK": 5,
+        "includeDocumentMetadata": false,
+        "options": {
+          "columnNames": {
+            "values": {
+              "contentColumnName": "content"
+            }
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePGVector",
+      "typeVersion": 1.3,
+      "position": [
+        -1696,
+        1664
+      ],
+      "id": "e3072030-4dc2-491e-88c7-97e88d90e0f3",
+      "name": "Postgres PGVector Store1",
+      "notesInFlow": false,
+      "credentials": {
+        "postgres": {
+          "id": "6fQd1nxuXuWfWBFp",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.link }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1632,
+        2064
+      ],
+      "id": "7cff5d32-d97d-4e53-bb8f-95486c7e3d3a",
+      "name": "HTTP Request3"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "link_store",
+          "mode": "list",
+          "cachedResultName": "link_store"
+        },
+        "returnAll": true,
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $json.body.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1920,
+        2064
+      ],
+      "id": "02bbcd4b-9c99-4686-a887-e4d81d61e421",
+      "name": "Select rows from a table1",
+      "credentials": {
+        "postgres": {
+          "id": "6fQd1nxuXuWfWBFp",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/embedding-001"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1632,
+        1888
+      ],
+      "id": "e1c01d9d-2dcb-447b-8f2c-c8a423b87804",
+      "name": "Embeddings Google Gemini1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "nP1ErPBHb2JefCfu",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "destinationKey": "text",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -1344,
+        2064
+      ],
+      "id": "1752d470-71bb-4515-b7fe-1acea7830c39",
+      "name": "Extract from File1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1120,
+        1920
+      ],
+      "id": "6039b21f-29d1-4fa4-8b54-1e1ef034ad0f",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Function: Robust real-world classifier & router for clinic chatbot\n// Input:  $json.user_message (string), optional $json.full_context, $json.top_score (0..1)\n// Output: merges classification, routing, and query_expansions back into $json\n\nconst raw = String(\n  $('Webhook1').first().json?.body?.message\n  ?? ''\n).trim();\nconst history = String($json.full_context || \"\");\nconst lc0 = raw.toLowerCase();\n\n// ---------- helpers ----------\nfunction normalize(s){\n  // strip accents, emojis, repeated chars, and extra whitespace\n  let x = s.normalize('NFKD').replace(/[\\u0300-\\u036f]/g,'');\n  x = x.replace(/[\\u{1F300}-\\u{1FAFF}\\u{1F100}-\\u{1F1FF}]/gu, ''); // emojis\n  x = x.replace(/(.)\\1{2,}/g, '$1$1'); // \"pleaaase\" -> \"pleaase\"\n  return x.replace(/\\s+/g, ' ').trim();\n}\nconst lc = normalize(lc0);\nconst estTokens = (s) => Math.ceil(s.length/4);\nconst toks = estTokens(raw);\nconst ctxTurns = (history.match(/\\b(User|Assistant):/g) || []).length;\n\n// quick language hints\nconst hasDevanagari = /[\\u0900-\\u097F]/.test(raw);\nconst hiHints = /\\b(kya|kab|kahan|kidhar|kaise|fees|kiraya|daam|buk|book|timing|samay|doctor|dawa|dard|bimari)\\b/i.test(lc);\n\n// small synonym banks (english + romanized hindi)\nconst lex = {\n  greet: /\\b(hi|hello|hey|namaste|good (morning|afternoon|evening))\\b/i,\n  thanks: /\\b(thanks|thank you|ty|shukriya|ok|okay|great)\\b/i,\n\n  // admin subintents\n  book: /\\b(appointment|book|reschedul|cancel|slot|availability|walk[- ]?in|visit|consult|register)\\b|ap+oi?nt|apomt|buk/i,\n  hours: /\\b(hours?|timings?|open|close|closing|holiday|weekend|sunday|today|tomorrow)\\b|\\bsamay\\b/i,\n  location: /\\b(address|location|branch|directions?|map|landmark|near me|nearest|parking|distance)\\b|\\b(kaha|kahaan|kidhar|kidhr|address pls|loc)\\b/i,\n  contact: /\\b(phone|call|number|mobile|whats?app|email|support)\\b/i,\n  price: /\\b(price|cost|fee|fees|charge|rate|cash|card|upi|payment|discount)\\b|\\b(insurance|mediclaim|coverage|cashless|network|copay)\\b/i,\n  reports: /\\b(report|lab|test results?|prescription|rx|invoice|receipt|records?)\\b/i,\n  doctor: /\\b(doctor|physician|specialist|gyne|gyn|cardio|derma|ent|pediatric|female doctor|who is available)\\b/i,\n  pharmacy: /\\b(pharmacy|chemist|drugstore|med(?:s|icines?)|refill|prescription refill)\\b/i,\n};\n\n// medical risk cues\nconst medHigh = /\\b(dose|dosage|contraindicat|pregnan|prega|lactat|child|pediatric|infant|newborn|chest pain|shortness of breath|overdose|poison|severe|emergenc|suicid|self[- ]?harm|interaction|drug interaction|mix with|alcohol|bleeding)\\b/i;\nconst medGen  = /\\b(symptom|side effect|treatment|remedy|manage|pain|fever|nausea|vomit|bp|blood pressure|sugar|diabetes|asthma|allerg|infection|antibiotic|flu|cough|cold|headache|migraine|rash)\\b/i;\nconst units   = /\\b(\\d+(\\.\\d+)?\\s?(mg|ml|mcg|kg|lbs|%|°c|years?|yrs?|months?|weeks?|days?|hours?|times? a day))\\b/i;\n\n// short one-word admin shorthands → map to subintent\nconst oneWordMap = {\n  'hours':'hours','timings':'hours','timing':'hours','open':'hours','closing':'hours','today':'hours',\n  'location':'location','locations':'location','address':'location','addr':'location','loc':'location','map':'location',\n  'phone':'contact','call':'contact','number':'contact','whatsapp':'contact','email':'contact',\n  'price':'price','fees':'price','fee':'price','charges':'price','cost':'price','insurance':'price','mediclaim':'price',\n  'appointment':'book','appointments':'book','book':'book','booking':'book','slots':'book','availability':'book',\n  'pharmacy':'pharmacy','chemist':'pharmacy','refill':'pharmacy',\n  'reports':'reports','report':'reports','results':'reports','invoice':'reports','receipt':'reports',\n};\n\n// ----------- scoring -----------\nconst scoreParts = [];\n// length\nscoreParts.push(toks>160?20:toks>100?15:toks>40?10:toks>15?5:0);\n// question type\nif (/\\b(what|when|where|who)\\b/.test(lc)) scoreParts.push(5);\nif (/\\b(how|why|compare|which|versus|vs)\\b/.test(lc)) scoreParts.push(10);\n// multi-intent\nconst multiCount = (lc.split(/[?!.]/).join(' ').match(/\\b(and|also|,|\\/)\\b/g)||[]).length;\nif (multiCount>=1) scoreParts.push(10);\n// numbers/units\nif (units.test(lc)) scoreParts.push(7);\n\n// medical cues\nlet intent = 'other';\nif (medHigh.test(lc)) { scoreParts.push(30); intent = 'medical'; }\nelse if (medGen.test(lc)) { scoreParts.push(15); intent = 'medical'; }\n\n// admin cues & subintent detection\nlet subintent = null;\nconst subMatches = [];\nfor (const [k, rx] of Object.entries(lex)) {\n  if (['greet','thanks'].includes(k)) continue;\n  if (rx.test(lc)) subMatches.push(k);\n}\nif (subMatches.length) {\n  intent = intent==='medical' ? 'medical' : 'admin';\n  // prefer more specific categories if multiple\n  const priority = ['book','hours','location','contact','price','doctor','reports','pharmacy'];\n  subintent = priority.find(p => subMatches.includes(p)) || subMatches[0];\n}\n\n// one-word shorthands\nif (!subintent) {\n  const word = lc.replace(/[^\\p{L}\\p{N}\\s]/gu,'').trim();\n  if (oneWordMap[word]) {\n    intent = intent==='medical' ? 'medical' : 'admin';\n    subintent = oneWordMap[word];\n  }\n}\n\n// conversation depth boosts complexity a bit\nif (ctxTurns >= 2) scoreParts.push(8);\n\n// retrieval-aware adjustments (if available later in the flow)\nlet score = scoreParts.reduce((a,b)=>a+b,0);\nconst top = typeof $json.top_score === 'number' ? $json.top_score : null;\nif (top !== null) {\n  if (top < 0.65) score += 30;\n  else if (top < 0.75) score += 15;\n  else if (top >= 0.85) score -= 8; // confidence bonus\n}\n\n// difficulty buckets\nlet difficulty = score>=70?'very_hard':score>=35?'hard':'easy';\n\n// admin single-word queries should not be over-penalized\nif (intent==='admin' && toks<=8 && !medHigh.test(lc)) difficulty = 'easy';\n\n// emergency safety override\nconst emergency = /\\b(chest pain|severe breath(ing)?|unconscious|stroke|heart attack|suicid|self[- ]?harm|poison|overdose)\\b/i.test(lc);\nif (emergency) { intent = 'medical'; difficulty = 'very_hard'; }\n\n// ----------- routing -----------\nlet model = difficulty==='easy' ? 'models/gemini-2.5-flash-lite'\n          : difficulty==='hard' ? 'models/gemini-2.5-flash'\n          : 'models/gemini-2.5-pro';\n// medical always at least Flash\nif (intent==='medical' && model==='models/gemini-2.5-flash-lite') model = 'models/gemini-2.5-flash';\n\n\n// ---------- query expansions for search ----------\nconst expansions = new Set();\n\nif (intent==='admin') {\n  if (subintent==='location') {\n    ['clinic address','clinic location','directions','map','nearest branch','parking'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='hours') {\n    ['opening hours','today hours','clinic timings','holiday hours','sunday hours'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='book') {\n    ['book appointment','appointment availability','online booking','reschedule appointment','cancel appointment'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='price') {\n    ['consultation fee','treatment cost','insurance accepted','cashless','network hospitals','coverage'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='contact') {\n    ['phone number','call clinic','whatsapp','email address','support'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='pharmacy') {\n    ['pharmacy near clinic','prescription refill','medicine availability','chemist hours'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='reports') {\n    ['download reports','get lab results','collect reports','invoice copy','prescription copy'].forEach(s=>expansions.add(s));\n  }\n  if (subintent==='doctor') {\n    ['doctor availability','which doctor today','specialist availability','female doctor'].forEach(s=>expansions.add(s));\n  }\n}\n\n// minimal Hindi/romanized hints for admin (helps when your RAG indexes have english)\nif (hiHints || hasDevanagari) {\n  if (subintent==='location') ['address','kahan','kidhar','location','map'].forEach(s=>expansions.add(s));\n  if (subintent==='hours') ['timings','kab khula','samay','open time','close time'].forEach(s=>expansions.add(s));\n  if (subintent==='book') ['appointment kaise book','slot','buk','reschedule','cancel'].forEach(s=>expansions.add(s));\n  if (subintent==='price') ['fees','daam','price','insurance','mediclaim'].forEach(s=>expansions.add(s));\n}\n\nif (intent==='admin' && !subintent) {\n  disambiguation_needed = true;\n  disambiguation_hint = 'Did you mean hours, location, booking, price, or contact info?';\n}\nif (intent==='medical' && !medHigh.test(lc) && !medGen.test(lc) && toks<6) {\n  disambiguation_needed = true;\n  disambiguation_hint = 'Could you share a bit more about the symptom or question?';\n}\n\n\n// final export\nreturn [{\n  json: {\n    ...$json,\n    classification: {\n      score,\n    },\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        1920
+      ],
+      "id": "efb42f5c-7b80-436e-a57e-7ac6855f162a",
+      "name": "Code9"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input: expects $json.classification.score (number) and optional $json.top_score (0..1)\n// Output: sets $json.routing with model + params\n\nconst cls = $json.classification || {};\nlet score = Number(cls.score) || 0;\n\n// Adjust score by retrieval quality (optional)\nconst top = (typeof $json.top_score === 'number') ? $json.top_score : null;\nif (top !== null) {\n  if (top < 0.65) score += 30;\n  else if (top < 0.75) score += 15;\n}\nscore = Math.max(0, Math.min(100, score)); // clamp 0..100\n\n// Simple rule: score > 30 => Pro, else Flash\nconst usePro = score > 30;\nconst model  = usePro ? 'models/gemini-2.5-pro' : 'models/gemini-2.5-flash';\n\nconst out = {\n  ...$json,\n  routing: {\n    score,\n    tier: usePro ? 'pro' : 'flash',\n    model,\n    params: {\n      temperature: 0.3,\n      topP: 0.8,\n      candidateCount: 1,\n    },\n    retrieval: {\n      k: usePro ? 5 : 3,\n      minScore: usePro ? 0.78 : 0.74,\n    },\n  },\n};\n\nreturn [{ json: out }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        1920
+      ],
+      "id": "28061537-f8ea-4723-a766-cef6d97137e1",
+      "name": "Code10"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node — prepare POLICY + COMPILED + gemini_body (robust, safe)\n// Mode: Run once for all items\n\n// ---------- helpers ----------\nfunction nodeRan(name) {\n  try {\n    const h = $(name);\n    const first = h.first();\n    return !!(first && first.json);\n  } catch { return false; }\n}\n\nfunction firstTextFrom(names, fields = ['text','pageContent','content']) {\n  for (const name of names) {\n    try {\n      if (!nodeRan(name)) continue;\n      const item = $(name).first();\n      for (const f of fields) {\n        if (item.json?.[f] != null) return String(item.json[f]);\n      }\n    } catch {}\n  }\n  return undefined;\n}\n\nconst OFFICIAL_NODE_CANDIDATES = ['Extract from File1', 'Merge1'];\n\n\n// OFFICIAL INFO\nlet officialStr =\n  firstTextFrom(OFFICIAL_NODE_CANDIDATES) ??\n  (typeof $json.official_info === 'string'\n    ? $json.official_info\n    : JSON.stringify($json.official_info ?? {}, null, 2));\nofficialStr = String(officialStr || '');\n\nlet refsStr = '';\ntry {\n  // CHANGE THIS to the node that outputs { question, answer }\n  const qaNodeName = 'Code8';  // e.g., 'Code2' or 'Code7' etc.\n\n  // Prefer Q/A items if present\n  if (nodeRan(qaNodeName)) {\n    const qaItems = $(qaNodeName).all() || [];\n    const blocks = qaItems.map(it => {\n      const j = it?.json || {};\n      const q = String(j.question ?? '').trim();\n      const a = String(j.answer   ?? '').trim();\n\n      if (q || a) return `Question: ${q || '(unknown)'}\\nAnswer: ${a || '(no answer found)'}`;\n\n      // fallback: plain text chunk if no explicit Q/A\n      const txt = String(j.pageContent ?? j.text ?? j.content ?? '').trim();\n      return txt ? `A: ${txt}` : '';\n    }).filter(Boolean);\n\n    refsStr = blocks.join('\\n\\n---\\n\\n');\n  }\n\n  // FINAL fallback: if you still want to read from 'Merge' when no Q/A\n  if (!refsStr && nodeRan('Merge')) {\n    const arr = $('Merge1').all() || [];\n    refsStr = arr.map(it => {\n      const j = it?.json || {};\n      return String(j.pageContent ?? j.text ?? j.content ?? '').trim();\n    }).filter(Boolean).join('\\n');\n  }\n} catch {\n  refsStr = '';\n}\n// Get raw body\nconst body = $('Webhook1').first().json.body || {};\nconst session_id = String(body.session_id ?? '').trim();\n// Current user message (string)\nconst userMsg = String(body.message ?? '').trim();\nconst timenow = String(body.time.local ?? '').trim();\n// Raw history (array of turns or partials)\nconst historyRaw = Array.isArray(body.history) ? body.history : [];\n\n// Basic sanitizer\nfunction sanitizeText(s) {\n  return String(s || '')\n    .replace(/\\u0000/g, '')        // strip nulls\n    .replace(/\\s+/g, ' ')          // collapse whitespace\n    .trim()\n    .slice(0, 2000);               // cap each turn length\n}\n\n// Normalize different history shapes → [{role:'user'|'assistant', content:'...'}]\nfunction normalizeHistory(arr) {\n  return arr.map((h, i) => {\n    let role = (h?.role || h?.from || '').toLowerCase();\n    if (role !== 'user' && role !== 'assistant') role = (i % 2 === 0) ? 'user' : 'assistant';\n\n    const content = sanitizeText(\n      h?.content ?? h?.text ?? h?.message ?? (typeof h === 'string' ? h : '')\n    );\n    return { role, content };\n  }).filter(t => t.content);\n}\n\n// Build a trimmed transcript (last N turns)\nconst turns = normalizeHistory(historyRaw);\n\n// Keep only the most recent 8–10 turns to control context size\nconst MAX_TURNS = 10;\nconst recentTurns = turns.slice(-MAX_TURNS);\n\n// Render to a compact transcript for your COMPILED\nconst convo = recentTurns.map(t => {\n  const speaker = t.role === 'assistant' ? 'Assistant' : 'User';\n  return `${speaker}: ${t.content}`;\n}).join('\\n');\n\n\nconst name = $('Webhook1').first().json.body.id || $('HTTP Request5').first().json.body.id\n// ---------- PROFESSIONAL POLICY (system prompt) ----------\nconst POLICY = [\n  `• Pharmacy_name: ${name}`,\n  \"You are Pharmacy_name AI, a smart, friendly, and efficient assistant for Pharmacy_name.\",\n  \"I always speak in the first person (“I”) as the clinic’s front-desk voice. I may say “our clinic” when helpful.\",\n  \"Write Pharmacy_name as Pharmacy Name with capitalization.\",\n  \"==============================\",\n  \"CORE RESPONSE LOGIC (priority order)\",\n  \"==============================\",\n\n  // PRECEDENCE\n  \"RULE 0 — PRECEDENCE (OFFICIAL OVER REFERENCES)\",\n  \"• I always use [OFFICIAL CLINIC INFO] first.\",\n  \"• I only use [REFERENCE Q&A RECORDS] if they are a strong semantic match (similarity ≥ 0.90) and do not conflict with [OFFICIAL CLINIC INFO].\",\n  \"• If no information exists in either source, I use the uncertainty template in RULE 7.\",\n  \"• I never guess or invent details; if a fact is missing, I use RULE 7.\",\n\n  // DIRECT PHONE HANDOFF FOR MEDICAL TOPICS\n  \"RULE 1 — DIRECT PHONE HANDOFF (medical conditions / diseases / medications / prescriptions)\",\n  \"• For any question about a medical condition, disease, symptom, medication, dosing, prescription/refill, side effects, or lab results, I do not provide medical detail.\",\n  \"• I reply using this template and I insert phone number(s) from [OFFICIAL CLINIC INFO]:\",\n  \"  Please call the clinic directly and our staff will be happy to help you.\",\n  \"  For assistance, please call the clinic directly:\",\n  \"  • [phone numbers from OFFICIAL CLINIC INFO as bullets]\",\n  \"• If multiple numbers exist, I list each as a separate • bullet with its label (e.g., location).\",\n  \"• If no numbers are available in [OFFICIAL CLINIC INFO], I use the uncertainty template (RULE 7).\",\n\n\n  // EMERGENCY-ONLY STATEMENT\n  \"RULE 1A — EMERGENCY INSTRUCTIONS\",\n  \"• We do not treat emergencies. If the user describes emergency symptoms or says it is an emergency, I respond exactly with:\",\n  \"  We do not treat emergencies. If you are experiencing chest pain or any emergency, please call 911 or go to the nearest emergency department immediately.\",\n  \"• I do not include booking or any other information in this case.\",\n\n  // NON-MEDICAL QUERIES\n  \"RULE 2 — NON-MEDICAL QUESTIONS\",\n  \"• For hours, phone, location, services, insurance, and paperwork, I use [OFFICIAL CLINIC INFO].\",\n  \"• If unavailable, I use the uncertainty template (RULE 7).\",\n  \"• I may ask one clarifying question only if truly necessary.\",\n\n  // CONTACT & LOGISTICS AUTOINCLUDE\n  \"RULE 2A — CONTACT & LOGISTICS AUTOINCLUDE\",\n  \"• If the user mentions website, phone, location, visits, or clinic hours, I include those details from [OFFICIAL CLINIC INFO] in my answer.\",\n  \"• Phone: include the clinic phone number(s) exactly as listed; if multiple, present as • bullets.\",\n  \"• Website: include the primary site and the booking link if available.\",\n  \"• Location/Visits: include address(es) and any visit instructions; use • bullets if multiple.\",\n  \"• Hours: include hours as listed in [OFFICIAL CLINIC INFO]; if locations differ, bullet per location.\",\n  \"• If any item is missing, I use the uncertainty template (RULE 7).\",\n\n  // BOOKING & APPOINTMENTS\n  \"RULE 3 — BOOKING & APPOINTMENTS\",\n  \"• When relevant (and only if Rules 1 or 1A did not apply), I append:\",\n  \"  For an accurate diagnosis and treatment plan, it’s always best to consult with a healthcare provider. You can book an appointment with us online or by phone:\",\n  `  • Book Online: in [OFFICIAL CLINIC INFO]`,\n  `  • Call Us: in [OFFICIAL CLINIC INFO]`,\n\n  // GREETINGS\n  \"RULE 4 — GREETINGS\",\n  \"• If the first turn is a simple greeting, I reply with a time-aware greeting:\",\n  \"  • Before 12:00 → Good morning\",\n  \"  • 12:00–17:00 → Good afternoon\",\n  \"  • After 17:00 → Good evening\",\n  \"• Otherwise, I skip the greeting and answer directly.\",\n\n  // INSURANCE, BILLING, PAPERWORK\n  \"RULE 5 — INSURANCE, BILLING, PAPERWORK\",\n  \"• Insurance: coverage depends on plan and service. If accepted insurers are listed in [OFFICIAL CLINIC INFO], I use them; otherwise I advise calling.\",\n  \"• Billing: I never confirm costs, discounts, or special offers; I advise checking the website or calling.\",\n  \"• Paperwork: I suggest bringing ID, insurance card, past records, and referrals if applicable; for minors, I mention parent/guardian consent.\",\n\n  // NO PROMISES / COMMITMENTS\n  \"RULE 6 — NO PROMISES OR COMMITMENTS\",\n  \"• I never guarantee outcomes, cures, discounts, special offers, or specific wait times.\",\n  \"• I never commit to prices or services that are not present in [OFFICIAL CLINIC INFO].\",\n\n  // UNCERTAINTY TEMPLATE\n  \"RULE 7 — UNCERTAINTY TEMPLATE\",\n  \"• If uncertain, I respond with one of:\",\n  \"  • I can’t confirm that right now. Please check our website or call the front desk for the latest information.\",\n  \"  • I’m not certain I have the updated details. Please visit our website or call us so we can confirm this for you.\",\n  \"• I do not loop or restate the same unconfirmed claim.\",\n\n  // OUTPUT & STYLE\n  \"RULE 8 — OUTPUT FORMAT AND STYLE (PLAIN TEXT ONLY)\",\n  \"• Plain text only. No Markdown, no HTML, no emojis.\",\n  \"• I use simple language (about 8th-grade level) and avoid jargon. If a medical term is unavoidable, I explain it simply.\",\n  \"• Replies are concise (3–6 sentences) unless the user asks for more.\",\n  \"• When listing multiple items, I use plain bullets with the Unicode dot:\",\n  \"  • Example item\",\n  \"• Each bullet is short (under 20 words).\"\n].join(\"\\n\");\n// ---------- COMPILED user/context ----------\nconst COMPILED = [\n  \"OFFICIAL CLINIC INFO:\",\n  officialStr,\n  \"\",\n  \"REFERENCE Q&A RECORDS:\",\n  refsStr || \"None\",\n  \"\",\n  \"CONVERSATION HISTORY:\",\n  convo,\n  \"\",\n  \"CURRENT TIME:\",\n  timenow,\n  \"\",\n  \"USER QUESTION:\",\n  userMsg\n].join(\"\\n\");\n\n// ---------- Final request body for Gemini ----------\nconst gen = $json.routing?.params || {};\nconst gemini_body = {\n  systemInstruction: { role: \"system\", parts: [{ text: POLICY }] },\n  contents: [{ role: \"user\", parts: [{ text: COMPILED }] }],\n  generationConfig: {\n    temperature: (typeof gen.temperature === 'number') ? gen.temperature : 0.3,\n    topP: (typeof gen.topP === 'number') ? gen.topP : 0.8,\n    candidateCount: 1,\n  }\n};\n\nreturn [{\n  json: {\n    ...$json,\n    gemini_body,\n    session_id,\n    timenow\n  }}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        1920
+      ],
+      "id": "60a7a282-2d1c-4fec-9fa6-7156033d68d5",
+      "name": "Code11"
+    },
+    {
+      "parameters": {
+        "jsCode": "const cand  = ($json.candidates || [])[0] || {};\nconst parts = (cand.content && cand.content.parts) || [];\nconst text  = parts.map(p => p.text || \"\").join(\"\").trim();\nconst block = $json.promptFeedback?.blockReason || cand.finishReason || null;\n\nreturn [{\n  json: {\n    answer: text || (block ? `I couldn’t answer that safely (${block}).` : \"No response.\"),\n    raw: $json,\n    session_id: $('Code11').first().json.session_id ,\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1920
+      ],
+      "id": "3149c97c-a62c-413d-98e7-f52bef7c93f8",
+      "name": "Code12"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        224,
+        1920
+      ],
+      "id": "99c64f94-ed48-4bd1-ba6c-e2756c0e6b8a",
+      "name": "Respond to Webhook1",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/{{$json.routing.model}}:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.gemini_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -224,
+        1920
+      ],
+      "id": "a1d7c37a-2ea2-41de-b7fd-c21cf2514e10",
+      "name": "HTTP Request4",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "nP1ErPBHb2JefCfu",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nINSERT INTO public.{{ $json.table_name }} (session_id, created_at, conversation)\nVALUES (\n  '{{ $json.session_id }}',\n  '{{ $json.created_at }}',\n  jsonb_build_array('{{ JSON.stringify($json.convo_delta).replace(/'/g,\"''\") }}'::jsonb)\n)\nON CONFLICT (session_id) DO UPDATE\nSET conversation = COALESCE({{ $json.table_name }}.conversation, '[]'::jsonb)\n                   || jsonb_build_array('{{ JSON.stringify($json.convo_delta).replace(/'/g,\"''\") }}'::jsonb),\n    created_at = {{ $json.table_name }}.created_at\nRETURNING id, session_id, created_at, conversation;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        672,
+        1824
+      ],
+      "id": "407f7bd9-4043-4a42-b27a-7711b74f5797",
+      "name": "Execute a SQL query3",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "6fQd1nxuXuWfWBFp",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "edb9493a-e0ca-4914-989e-c3146fc8192e",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notExists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        2016
+      ],
+      "id": "3abf113f-0833-406f-b2e4-7e85e814c6ee",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// from your pipeline\nconst body = $('Webhook1').first().json.body || '';\nconst sessionId = $input.first().json.session_id           // coming from the widget\nconst user = String(body.message ?? '').trim();\nconst response = $input.first().json.answer || '';\nconst id = String(body.id ?? '').trim();\nconst now = String(body.time.local ?? '').trim();\n// one new convo element\nconst newItem = { user, response, at: now };\nconst table_name = `${id}_logs`;\n// pass to next node as a single item with params for SQL\nreturn [\n  {\n    json: {\n      session_id: sessionId,\n      created_at: now,\n      table_name,\n      convo_delta: newItem,\n      id\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        1920
+      ],
+      "id": "4ee4fd78-eeb7-4082-b05f-26c4b69d4df3",
+      "name": "Code13"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code node\nconst user = $('Code13').item.json.convo_delta?.user ?? '';\nconst response = $('Code13').item.json.convo_delta?.response ?? '';\n\nreturn [\n  {\n    json: {\n      content: {\n        parts: [\n          { text: `${user} ${response}` }\n        ]\n      }\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        2016
+      ],
+      "id": "72bc126c-d2c3-49a9-a9e3-e969efc2100e",
+      "name": "Code14"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code Node — format Gemini embeddings for Postgres\nconst convo = $('Code13').first();\nconst q = convo.json.convo_delta.user || \"\";\nconst a = convo.json.convo_delta.response || \"\";\nconst id = convo.json.id\nconst vec = $json.embedding?.values;\nif (!vec || !Array.isArray(vec)) throw new Error('No embedding array');\n// Build \"content\" (for semantic search, Q + A combined)\nconst content = `${q}? ${a}`;\n// Return formatted row for SQL insert\nreturn [{\n  json: {\n    question: q,\n    answer: a,\n    embedding: vec,\n    content,\n    id\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        2016
+      ],
+      "id": "441dd5f3-8518-4997-9fef-eb137fecfd81",
+      "name": "Code15"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent/",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1344,
+        2016
+      ],
+      "id": "95cb0a5f-6577-432b-9509-9bb2d1b5315f",
+      "name": "HTTP Request5",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "nP1ErPBHb2JefCfu",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id FROM {{ $json.id }} WHERE question =$$ {{ $json.convo_delta.user }} $$ LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        672,
+        2016
+      ],
+      "id": "23f443b5-9e50-476d-914e-323e676a19a7",
+      "name": "Execute a SQL query4",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "6fQd1nxuXuWfWBFp",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO {{ $json.id }} (question, answer, embedding, content)\nVALUES (\n  $$ {{ $json.question }} $$,\n  $$ {{ $json.answer }} $$,\n  '[{{ $json.embedding }}]'::vector,\n  $$ {{ $json.content }} $$\n)\nON CONFLICT (question) DO NOTHING\nRETURNING id;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1792,
+        2016
+      ],
+      "id": "20ae59bb-ee0f-4195-b236-49e94f99efac",
+      "name": "Execute a SQL query5",
+      "credentials": {
+        "postgres": {
+          "id": "6fQd1nxuXuWfWBFp",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "answer",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -2432,
+        -944
+      ],
+      "id": "cfa73c02-d87d-496f-8bd7-e17383416d22",
+      "name": "Webhook2",
+      "webhookId": "4c958499-c2d0-44e9-8dab-e7fbe4f3aeb2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const conv = $input.first().json.body.conversation_uuid;\n\n// Your own metadata\nconst id = \"oat_clinic\";\n\n// Put custom params on the eventUrl\nconst asrUrl =\n  `https://assist.medidoze.com/webhook/oat_clinic?id=${encodeURIComponent(id)}`\n+ `&conv=${encodeURIComponent(conv)}`;\n\nconst ncco = [\n  { action: \"talk\", text: \"Hi! Ask your question after the beep.\" },\n  {\n    action: \"input\",\n    type: [\"speech\"],\n    speech: {startTimeout: 10.0, endOnSilence: 5.0 },\n    eventUrl: [asrUrl],\n    eventMethod: \"POST\"\n  }\n];\n\nreturn [{ json: { ncco } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2208,
+        -944
+      ],
+      "id": "8ad13c8b-c902-40b2-b7de-b956d63aec36",
+      "name": "Code16"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.ncco }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -1984,
+        -944
+      ],
+      "id": "460f70e6-f228-43c6-a061-b8d204aeedd9",
+      "name": "Respond to Webhook2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code17\nfunction nodeRan(name) {\n  try {\n    const h = $(name);\n    const first = h.first();\n    return !!(first && first.json);\n  } catch { return false; }\n}\n\nconst r = $('Webhook').first().json.body.speech.results[0];\nconst data = $('Extract from File2').first().json.text;\nconst id = $('Webhook').first().json.query.id;\nlet refsStr = '';\ntry {\n  // CHANGE THIS to the node that outputs { question, answer }\n  const qaNodeName = 'Code20';  // e.g., 'Code2' or 'Code7' etc.\n\n  // Prefer Q/A items if present\n  if (nodeRan(qaNodeName)) {\n    const qaItems = $(qaNodeName).all() || [];\n    const blocks = qaItems.map(it => {\n      const j = it?.json || {};\n      const q = String(j.question ?? '').trim();\n      const a = String(j.answer   ?? '').trim();\n\n      if (q || a) return `Question: ${q || '(unknown)'}\\nAnswer: ${a || '(no answer found)'}`;\n\n      // fallback: plain text chunk if no explicit Q/A\n      const txt = String(j.pageContent ?? j.text ?? j.content ?? '').trim();\n      return txt ? `A: ${txt}` : '';\n    }).filter(Boolean);\n\n    refsStr = blocks.join('\\n\\n---\\n\\n');\n  }\n\n  // FINAL fallback: if you still want to read from 'Merge' when no Q/A\n  if (!refsStr && nodeRan('Merge2')) {\n    const arr = $('Merge').all() || [];\n    refsStr = arr.map(it => {\n      const j = it?.json || {};\n      return String(j.pageContent ?? j.text ?? j.content ?? '').trim();\n    }).filter(Boolean).join('\\n');\n  }\n} catch {\n  refsStr = '';\n}\nconst transcript = (r && r.text) ? r.text : '';\nfunction getLocalTime() {\n        const d = new Date();\n        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;\n        return {\n          iso: d.toISOString(),\n          local: d.toLocaleString(),\n          offset: d.getTimezoneOffset(),\n          tz\n        };\n      }\nconst time = getLocalTime();\nreturn [{ transcript, confidence: r.confidence, time, data, id, refsStr}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1104,
+        176
+      ],
+      "id": "fedda2c3-dff0-4218-8b3c-b3fe7c385803",
+      "name": "Code17"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json.ncco}}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -208,
+        176
+      ],
+      "id": "b47d3249-8eaf-42c2-a871-22e667d5fa06",
+      "name": "Respond to Webhook3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code18 — build next NCCO from AI reply\nconst asrUrl = 'https://assist.medidoze.com/webhook/oat_clinic';\n\nlet aiText = $input.first().json.message.content\n\nconst reply = aiText || \"Sorry, I didn’t catch that. Please say your question again.\";\n\n// Build NCCO\nconst ncco = [\n  { action: 'talk', text: reply, bargeIn: true },\n  {\n    action: 'input',\n    type: ['speech'],\n    speech: { language: 'en-US', endOnSilence: 1.0 },\n    eventUrl: [asrUrl]\n  }\n];\n\n// IMPORTANT: return with a json object\nreturn [{ json: { ncco } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        176
+      ],
+      "id": "16965d67-6fe4-4b66-9185-995ab1d3a034",
+      "name": "Code18"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://76.66.207.49:44491/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.gemini_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -656,
+        176
+      ],
+      "id": "f8989cc1-c182-48df-96a7-773cef498827",
+      "name": "HTTP Request7"
+    },
+    {
+      "parameters": {
+        "jsCode": "const name = $input.first().json.id;\n// ----- POLICY (system prompt) -----\nconst POLICY = [\n`• Pharmacy_name: ${name}`,\n\"You are Pharmacy_name AI, a smart, friendly, and efficient assistant for Pharmacy_name.\",\n\"You speak just like you’re on a phone call with a patient or customer.\",\n\"I always use first-person (“I”) when speaking, and I may say “our clinic” or “our pharmacy” when helpful.\",\n\"Always write Pharmacy_name as Pharmacy Name with capitalization.\",\n\"==============================\",\n\"CORE RESPONSE LOGIC (priority order)\",\n\"==============================\",\n\"RULE 0 — PRECEDENCE (OFFICIAL OVER REFERENCES)\",\n\"• I always rely on [OFFICIAL CLINIC INFO] first.\",\n\"• I only use [REFERENCE Q&A RECORDS] if they strongly match (similarity ≥ 0.90) and don’t conflict with [OFFICIAL CLINIC INFO].\",\n\"• If I don’t have the answer, I politely let the caller know (see RULE 7).\",\n\"• I never guess or make up details.\",\n\"\",\n\"RULE 1 — DIRECT PHONE HANDOFF (medical questions)\",\n\"• If someone asks about a medical condition, disease, medication, dosage, refill, side effect, or lab result, I don’t provide details.\",\n\"• Instead, I say naturally:\",\n\"   “I recommend giving us a call directly so our staff can help you with that.”\",\n\"   “Here’s the best number to reach us:”\",\n\"   [phone numbers from OFFICIAL CLINIC INFO]\",\n\"• If more than one number exists, I say them one by one with labels (e.g., Main Line, Location A).\",\n\"• If no number is listed, I use the uncertainty template in RULE 7.\",\n\"\",\n\"RULE 1A — EMERGENCY INSTRUCTIONS\",\n\"• If someone says it’s an emergency or describes emergency symptoms, I respond firmly:\",\n\"   “We don’t handle emergencies. If you’re having chest pain or any emergency, please call 911 or go to the nearest emergency room right away.”\",\n\"• I don’t add booking info or anything else in this case.\",\n\"\",\n\"RULE 2 — NON-MEDICAL QUESTIONS\",\n\"• For questions like hours, phone, address, services, or insurance, I use [OFFICIAL CLINIC INFO].\",\n\"• If I don’t have the info, I politely let them know (RULE 7).\",\n\"• I can ask one clarifying question if needed, but keep it short and natural.\",\n\"\",\n\"RULE 2A — CONTACT & LOGISTICS AUTOINCLUDE\",\n\"• If they ask about website, phone, location, visits, or hours, I always include details from [OFFICIAL CLINIC INFO].\",\n\"• Phone: I say the numbers clearly. If more than one, I list them one by one.\",\n\"• Website: I share the main website and booking link if available.\",\n\"• Location/Visits: I share addresses and instructions, one at a time if multiple.\",\n\"• Hours: I share official hours. If different for each location, I explain them separately.\",\n\"• If any piece is missing, I use RULE 7.\",\n\"\",\n\"RULE 3 — BOOKING & APPOINTMENTS\",\n\"• If it’s about scheduling (and not covered by RULE 1 or 1A), I add:\",\n\"   “For the right diagnosis and treatment, it’s always best to see a provider. You can book an appointment online or by phone.”\",\n\"   I then share the booking website and/or phone number from [OFFICIAL CLINIC INFO].\",\n\"\",\n\"RULE 4 — GREETINGS\",\n\"• If the first message is just a greeting, I reply with a warm, time-aware greeting:\",\n\"   • Before 12:00 → “Good morning, thanks for calling Pharmacy Name. How can I help you today?”\",\n\"   • 12:00–17:00 → “Good afternoon, thanks for calling Pharmacy Name. How can I help you today?”\",\n\"   • After 17:00 → “Good evening, thanks for calling Pharmacy Name. How can I help you today?”\",\n\"• Otherwise, I skip the greeting and answer directly.\",\n\"\",\n\"RULE 5 — INSURANCE, BILLING, PAPERWORK\",\n\"• Insurance: If accepted insurers are listed in [OFFICIAL CLINIC INFO], I share them. If not, I suggest calling to confirm.\",\n\"• Billing: I don’t confirm costs or discounts. I say politely to check the website or call.\",\n\"• Paperwork: I suggest bringing ID, insurance card, past records, and referrals if needed. For minors, I mention parent/guardian consent.\",\n\"\",\n\"RULE 6 — NO PROMISES OR COMMITMENTS\",\n\"• I never guarantee cures, wait times, prices, or special offers.\",\n\"• I only share what’s in [OFFICIAL CLINIC INFO].\",\n\"\",\n\"RULE 7 — UNCERTAINTY TEMPLATE\",\n\"• If I’m unsure, I use natural phrases like:\",\n\"   “I can’t confirm that right now, but if you check our website or give us a call, we’ll be happy to confirm it for you.”\",\n\"   “I don’t have the latest details on that, but our front desk can confirm if you call or check online.”\",\n\"\",\n\"RULE 8 — PHONE-CALL STYLE\",\n\"• I speak warmly, clearly, and politely, like a real front-desk staff member on the phone.\",\n\"• My answers are short and conversational (3–6 sentences).\",\n\"• If I need to give multiple pieces of info (like phone numbers, hours, or addresses), I list them one by one, clearly and naturally.\",\n\"• I avoid robotic or scripted tone — I sound caring, professional, and efficient.\"\n].join(\"\\n\");\n\n// ----- USER MESSAGE -----\nconst userMsg = String($json.transcript ?? \"\").trim();\nconst refsStr = $input.first().json.refsStr\nconst officialStr = $input.first().json.data\nconst COMPILED = [\n  \"OFFICIAL CLINIC INFO:\",\n  officialStr,\n  \"\",\n  \"REFERENCE Q&A RECORDS:\",\n  refsStr || \"None\",\n  \"\",\n  \"USER QUESTION:\",\n  userMsg\n].join(\"\\n\");\n// Build request body for Gemini \"generateContent\"\nconst gemini_body = {\n  model: \"puyangwang/medgemma-27b-it:q6\",\n  stream: false,\n  messages: [\n    { role: \"system\", content: POLICY + COMPILED },\n    { role: \"user\",   content: userMsg }\n  ],\n  options: {\n    temperature: 0.0\n  }\n};\n\nreturn [{ json: { ...$json, gemini_body } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        176
+      ],
+      "id": "1240d9a6-b769-427e-a295-cc25117329fc",
+      "name": "Code19"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0a975e9f-a19a-45f3-904a-33546d0f96e5",
+              "leftValue": "={{ $('Webhook').item.json.headers.origin }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -2352,
+        -128
+      ],
+      "id": "8f79083e-969d-4bb7-af15-94a258a9cf35",
+      "name": "If3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize VS output into clean Q&A docs for the LLM\nconst out = [];\nconst seen = new Set();\n\nfor (const item of items) {\n  const j = item.json ?? {};\n  const d = j.document ?? j;  // handles both shapes\n\n  // score / similarity\n  const score =\n    j.score ?? d.score ?? j.similarity ?? d.similarity ?? null;\n\n  // extract fields\n  let question = (d.question ?? j.question ?? '').trim();\n  let answer   = (d.answer   ?? j.answer   ?? '').trim();\n\n  // if no explicit Q/A, try to split from pageContent or content\n  if (!question && !answer) {\n    const content = (d.pageContent ?? d.content ?? '').trim();\n    if (content) {\n      // naive heuristic: first sentence = question, rest = answer\n      const parts = content.split(/[?]\\s*/); \n      if (parts.length > 1) {\n        question = parts[0].trim() + \"?\";\n        answer   = parts.slice(1).join(\" \").trim();\n      } else {\n        // if can't split, treat whole thing as \"answer\"\n        answer = content;\n      }\n    }\n  }\n\n  // skip if still empty\n  if (!question && !answer) continue;\n\n  // basic de-dup (based on first 200 chars of combined Q+A)\n  const sig = (question + answer).slice(0, 500);\n  if (seen.has(sig)) continue;\n  seen.add(sig);\n\n  out.push({\n    json: {\n      question,\n      answer,\n      score,\n    }\n  });\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1552,
+        16
+      ],
+      "id": "7df1c128-f4e1-4da6-b839-5ffefd8ac725",
+      "name": "Code20"
+    },
+    {
+      "parameters": {
+        "mode": "load",
+        "tableName": "={{ $json.query.id }}",
+        "prompt": "={{ $json.body.speech.results[0].text }}",
+        "topK": 5,
+        "includeDocumentMetadata": false,
+        "options": {
+          "columnNames": {
+            "values": {
+              "contentColumnName": "content"
+            }
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePGVector",
+      "typeVersion": 1.3,
+      "position": [
+        -1904,
+        -80
+      ],
+      "id": "963eef14-125f-4ec9-8d76-51fa56471b0b",
+      "name": "Postgres PGVector Store2",
+      "notesInFlow": false,
+      "credentials": {
+        "postgres": {
+          "id": "6fQd1nxuXuWfWBFp",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.link }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1840,
+        320
+      ],
+      "id": "d5661350-61c1-41ae-b06b-9a5d9e1567f1",
+      "name": "HTTP Request6"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "link_store",
+          "mode": "list",
+          "cachedResultName": "link_store"
+        },
+        "returnAll": true,
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $json.query.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2128,
+        320
+      ],
+      "id": "ae37b685-67a8-477f-8cd0-58555858fd8b",
+      "name": "Select rows from a table2",
+      "credentials": {
+        "postgres": {
+          "id": "6fQd1nxuXuWfWBFp",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/embedding-001"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1840,
+        144
+      ],
+      "id": "d873604b-88d4-4a85-8c9a-3a10a3d8f971",
+      "name": "Embeddings Google Gemini2",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "nP1ErPBHb2JefCfu",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "destinationKey": "text",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -1552,
+        320
+      ],
+      "id": "3e55c158-a3b0-4806-bb7a-975e2711f195",
+      "name": "Extract from File2"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1328,
+        176
+      ],
+      "id": "53702a4f-f007-4389-98c9-95aaa3345386",
+      "name": "Merge2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "If3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres PGVector Store": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select rows from a table": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Postgres PGVector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "Code2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code2": {
+      "main": [
+        [
+          {
+            "node": "Code3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code3": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code4": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Code4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        []
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Code6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code5": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code6": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code7": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Code7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Code8": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Select rows from a table1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Postgres PGVector Store1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres PGVector Store1": {
+      "main": [
+        [
+          {
+            "node": "Code8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request3": {
+      "main": [
+        [
+          {
+            "node": "Extract from File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select rows from a table1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Postgres PGVector Store1",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File1": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Code9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code9": {
+      "main": [
+        [
+          {
+            "node": "Code10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code10": {
+      "main": [
+        [
+          {
+            "node": "Code11",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code11": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code12": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Code13",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request4": {
+      "main": [
+        [
+          {
+            "node": "Code12",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Code14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code13": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Execute a SQL query4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code14": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code15": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request5": {
+      "main": [
+        [
+          {
+            "node": "Code15",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query4": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook2": {
+      "main": [
+        [
+          {
+            "node": "Code16",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code16": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code17": {
+      "main": [
+        [
+          {
+            "node": "Code19",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code18": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request7": {
+      "main": [
+        [
+          {
+            "node": "Code18",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code19": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If3": {
+      "main": [
+        [
+          {
+            "node": "Postgres PGVector Store",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Select rows from a table",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Select rows from a table2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Postgres PGVector Store2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code20": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres PGVector Store2": {
+      "main": [
+        [
+          {
+            "node": "Code20",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request6": {
+      "main": [
+        [
+          {
+            "node": "Extract from File2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select rows from a table2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini2": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Postgres PGVector Store2",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File2": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge2": {
+      "main": [
+        [
+          {
+            "node": "Code17",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "REdFsgHOVh6EMVPZ"
+  },
+  "versionId": "cef2d332-a4fb-4982-a8f8-258ffac01f5c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "06fc528352966bba302317d1efeefc5f997d524e55879c4d1d572aa56022c02a"
+  },
+  "id": "REdFsgHOVh6EMVPZ",
+  "tags": []
+}

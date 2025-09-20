@@ -202,6 +202,32 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
       .title h1{ font-size:16px; font-weight:700; margin:0;}
       .title small{ color:var(--muted); font-size:12px }
       .close{ border:none; background:#0000; padding: 10px 14px; cursor:pointer; font-size:18px; }
+      .callBtn {
+          width: 39px;
+          height: 36px;
+          bottom: 13px;
+          right: 52px;
+          border-radius: 8px;
+          border: 1px solid rgb(255 255 255 / 0%);
+          /* background: rgba(255, 255, 255, 0.15); */
+          display: none;
+          align-items: center;
+          justify-content: center;
+          position: absolute;
+          color: #fff;
+          transition: background 0.2s 
+      ease, border-color 0.2s 
+      ease;
+      }
+      .callBtn svg,
+      .callBtn i {
+        width: 18px;
+        height: 18px;
+        pointer-events: none;
+        fill: currentColor;               /* for SVG */
+        font-size: 18px;                  /* for icon fonts */
+      }
+
       .head, .composer{ flex: 0 0 auto; }
       .row{ display:flex; opacity:0; transform:translateY(8px); animation: rise .28s ease forwards; flex-direction:column;}
       .row.user{ align-items:flex-end } .row.message{ align-items:flex-start }
@@ -289,6 +315,9 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
           border-bottom-left-radius: 0;
           border-bottom-right-radius: 0;  
         }
+        .callBtn {
+          display: flex;
+        }
         .typing {
           position: static;
           margin: 0 0 10px 11px;
@@ -307,11 +336,18 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
       launcherIcon, h('span', { class: 'badge', id: 'badge' }, '1')
     );
     const panel = h('div', { class: 'panel' });
+    const callBtn = h('a', {
+      class: 'callBtn',
+      href: `tel:${options?.clinicPhone || cfg.clinicPhone || '+14372662376'}`,
+      title: 'Call clinic',
+      style: 'display:none' // default hidden – JS will toggle on mobile
+    }, h('img', { src: (ASSETS + 'images/call.svg'), alt: 'Call', style: 'width:22px;height:22px;filter:invert(1);' }));
     const head = h('div', { class: 'head', style: { background: cfg.headerGradient } },
       h('div', { class: 'title', style: { color: cfg.clinicNameColor } },
         h('img', { src: cfg.logoUrl, alt: '', style: 'width:45px;height:45px;margin:0; ' }),
         h('div', {}, h('h1', {}, cfg.labels.title), h('small', {}, cfg.labels.subtitle || ''))
       ),
+      callBtn,
       h('div', {},
         h('button', { class: 'close', id: 'closeBtn' },
           h('img', { src: (ASSETS + 'images/close.svg'), alt: 'Close', style: 'width:11px;height:11px;filter:invert(1);' })
@@ -863,39 +899,11 @@ const ASSETS = (typeof window !== 'undefined' && window.MACW_ASSETS_URL) ? windo
         forceFocusComposer(); 
       }
     }
-    // === DROP THIS INSIDE buildWidget(...) AFTER `panel.append(head, stream, typing, composer);` ===
-
-    // 1) Create a tiny mobile-only Call button (hidden by default)
-    const CALL_NUMBER = (options && options.clinicPhone) || '+911234567890'; // set your number here
-    const callBtn = h(
-      'a',
-      {
-        href: `tel:${CALL_NUMBER}`,
-        title: 'Call clinic',
-        style: {
-          position: 'absolute',
-          left: '12px',
-          bottom: 'calc(var(--composer-h, 58px) + 12px)',
-          zIndex: '4',
-          padding: '8px 12px',
-          borderRadius: '999px',
-          background: '#10b981',
-          color: '#fff',
-          fontWeight: '600',
-          fontSize: '13px',
-          textDecoration: 'none',
-          boxShadow: '0 6px 16px rgba(0,0,0,.18)',
-          display: 'none' // hidden until mobile + panel open
-        }
-      },
-      'Call'
-    );
-    panel.appendChild(callBtn);
-
-    // 2) Helper to show/hide based on device + open state
     function updateCallBtn() {
-      callBtn.style.display = (panel.classList.contains('open') && isMobile()) ? 'inline-flex' : 'none';
+      if (!callBtn) return; // null-guard
+      callBtn.style.display = (panel.classList.contains('open') && isMobile()) ? 'flex' : 'none';
     }
+    
 
     // // --- TEST ONLY: delay the assistant's reply while showing the "..." typing dots ---
     // window.__medassistDelayOnce = async function (ms = 600000) { // default 10 minutes
